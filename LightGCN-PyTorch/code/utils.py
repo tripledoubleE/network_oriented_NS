@@ -18,7 +18,7 @@ from sklearn.metrics import roc_auc_score
 import random
 import os
 
-from sources import mcns_sampling
+from sources import mcns_sampling, item_projected_sampling
 
 try:
     from cppimport import imp_from_filepath
@@ -65,7 +65,43 @@ def UniformSample_original(dataset, neg_ratio = 1):
     print("UniformSample_original ")
     print(S.shape)
     
-    return S   
+    return S  
+ 
+def UniformSample_original_python(dataset):
+    """
+    the original impliment of BPR Sampling in LightGCN
+    :return:
+        np.array
+    """
+    dataset : BasicDataset
+
+    total_start = time()
+    dataset : BasicDataset
+    user_num = dataset.trainDataSize
+    users = np.random.randint(0, dataset.n_users, user_num)
+    allPos = dataset.allPos
+    S = []
+    sample_time1 = 0.
+    sample_time2 = 0.
+    for i, user in enumerate(users):
+        start = time()
+        posForUser = allPos[user]
+        if len(posForUser) == 0:
+            continue
+        sample_time2 += time() - start
+        posindex = np.random.randint(0, len(posForUser))
+        positem = posForUser[posindex]
+        while True:
+            negitem = np.random.randint(0, dataset.m_items)
+            if negitem in posForUser:
+                continue
+            else:
+                break
+        S.append([user, positem, negitem])
+        end = time()
+        sample_time1 += end - start
+    total = time() - total_start
+    return np.array(S)
 
 
 def MCNS_Sample(dataset, Recmodel):
@@ -114,56 +150,14 @@ def MCNS_Sample(dataset, Recmodel):
     '''
 
     dataset : BasicDataset
-    allPos = dataset.allPos
-    if sample_ext:
-        S = sampling.sample_negative(dataset.n_users, dataset.m_items,
-                                     dataset.trainDataSize, allPos)
-    else:
-        S = MCNS_Sample_original_python(dataset, Recmodel)
+    #allPos = dataset.allPos
+
+    S = MCNS_Sample_original_python(dataset, Recmodel)
     
     print("UniformSample_original ")
     print(S.shape)
     
     return S   
-
-
-def UniformSample_original_python(dataset):
-    """
-    the original impliment of BPR Sampling in LightGCN
-    :return:
-        np.array
-    """
-
-    print("MCNS SAMPLING FUNCTION !!!!!")
-    dataset : BasicDataset
-
-    total_start = time()
-    dataset : BasicDataset
-    user_num = dataset.trainDataSize
-    users = np.random.randint(0, dataset.n_users, user_num)
-    allPos = dataset.allPos
-    S = []
-    sample_time1 = 0.
-    sample_time2 = 0.
-    for i, user in enumerate(users):
-        start = time()
-        posForUser = allPos[user]
-        if len(posForUser) == 0:
-            continue
-        sample_time2 += time() - start
-        posindex = np.random.randint(0, len(posForUser))
-        positem = posForUser[posindex]
-        while True:
-            negitem = np.random.randint(0, dataset.m_items)
-            if negitem in posForUser:
-                continue
-            else:
-                break
-        S.append([user, positem, negitem])
-        end = time()
-        sample_time1 += end - start
-    total = time() - total_start
-    return np.array(S)
 
 def MCNS_Sample_original_python(dataset, Recmodel):
     """
@@ -225,6 +219,54 @@ def MCNS_Sample_original_python(dataset, Recmodel):
     return np.array(S)
 
 
+
+def ItemProjSample_original(dataset, neg_ratio = 1):
+
+    dataset : BasicDataset
+
+    S = ItemProjSample_original_python(dataset)
+    
+    print("ItemProjSample_original ")
+    print(S.shape)
+    
+    return S  
+ 
+def ItemProjSample_original_python(dataset):
+    """
+    the original impliment of BPR Sampling in LightGCN
+    :return:
+        np.array
+    """
+    print("ITEM PROJECTED SAMPLING FUNCTION !!!!!")
+
+    dataset : BasicDataset
+
+    print("user num: ", dataset.n_users)
+    print("item num: ", dataset.m_items)
+    item_proj_graph = dataset.create_item_projected_graph()
+
+    user_num = dataset.trainDataSize
+    users = np.random.randint(0, dataset.n_users, user_num)
+    allPos = dataset.allPos
+    S = []
+
+    for i, user in enumerate(users):
+        start = time()
+        posForUser = allPos[user]
+        if len(posForUser) == 0:
+            continue
+        posindex = np.random.randint(0, len(posForUser))
+        positem = posForUser[posindex]
+        while True:
+            #negitem = np.random.randint(0, dataset.m_items)
+            negitem = item_projected_sampling.furthest_node_from_given_node(item_proj_graph, positem)
+            if negitem in posForUser:
+                continue
+            else:
+                break
+        S.append([user, positem, negitem])
+
+    return np.array(S)
 
 
 # ===================end samplers==========================

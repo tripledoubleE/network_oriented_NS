@@ -71,6 +71,9 @@ class BasicDataset(Dataset):
         raise NotImplementedError
     def convert_sparse_to_networkx(self):
         raise NotImplementedError
+    
+    def create_item_projected_graph(self):
+        raise NotImplementedError
 
     def load_item_pop(self):
         raise NotImplementedError
@@ -289,7 +292,6 @@ class Loader(BasicDataset):
         # (users,items), bipartite graph
         self.UserItemNet = csr_matrix((np.ones(len(self.trainUser)), (self.trainUser, self.trainItem)),
                                       shape=(self.n_user, self.m_item))
-
         self.users_D = np.array(self.UserItemNet.sum(axis=1)).squeeze()
         self.users_D[self.users_D == 0.] = 1
         self.items_D = np.array(self.UserItemNet.sum(axis=0)).squeeze()
@@ -458,3 +460,16 @@ class Loader(BasicDataset):
                 G.add_edge(i, j)
 
         return G
+    
+    def create_item_projected_graph(self):
+        csr_usr_item_graph = self.UserItemNet
+
+        rows, cols = csr_usr_item_graph.nonzero()
+        edges = np.column_stack((rows, cols))
+        df = pd.DataFrame(edges, columns=['user', 'item'])
+        G_bipartite = nx.from_pandas_edgelist(df, 'user', 'item')
+
+        G_item_projected = nx.bipartite.projected_graph(G_bipartite, nodes=df['item'].unique())
+        # Graph with 9177 nodes and 3892067 edges
+
+        return G_item_projected

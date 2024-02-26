@@ -3,8 +3,6 @@ import torch
 import numpy as np
 from dataloader import BasicDataset
 import model
-import time
-import random
         
 # iterative version
 def dfs(dataset, mask, nx_graph, start_node, walks_num=100):
