@@ -52,7 +52,7 @@ class BPRLoss:
 
         return loss.cpu().item()
 
-def UniformSample_original(dataset, Recmodel, neg_ratio = 1):
+def UniformSample_original(dataset, neg_ratio = 1):
 
     dataset : BasicDataset
     allPos = dataset.allPos
@@ -60,7 +60,7 @@ def UniformSample_original(dataset, Recmodel, neg_ratio = 1):
         S = sampling.sample_negative(dataset.n_users, dataset.m_items,
                                      dataset.trainDataSize, allPos, neg_ratio)
     else:
-        S = UniformSample_original_python(dataset, Recmodel)
+        S = UniformSample_original_python(dataset)
     
     print("UniformSample_original ")
     print(S.shape)
@@ -69,6 +69,7 @@ def UniformSample_original(dataset, Recmodel, neg_ratio = 1):
 
 
 def MCNS_Sample(dataset, Recmodel):
+    '''
     print("MCNS SAMPLING FUNCTION !!!!!")
     dataset : BasicDataset
     Recmodel: model.LightGCN
@@ -110,9 +111,61 @@ def MCNS_Sample(dataset, Recmodel):
     print(result.shape)
 
     return result
+    '''
+
+    dataset : BasicDataset
+    allPos = dataset.allPos
+    if sample_ext:
+        S = sampling.sample_negative(dataset.n_users, dataset.m_items,
+                                     dataset.trainDataSize, allPos)
+    else:
+        S = MCNS_Sample_original_python(dataset, Recmodel)
+    
+    print("UniformSample_original ")
+    print(S.shape)
+    
+    return S   
 
 
-def UniformSample_original_python(dataset, Recmodel):
+def UniformSample_original_python(dataset):
+    """
+    the original impliment of BPR Sampling in LightGCN
+    :return:
+        np.array
+    """
+
+    print("MCNS SAMPLING FUNCTION !!!!!")
+    dataset : BasicDataset
+
+    total_start = time()
+    dataset : BasicDataset
+    user_num = dataset.trainDataSize
+    users = np.random.randint(0, dataset.n_users, user_num)
+    allPos = dataset.allPos
+    S = []
+    sample_time1 = 0.
+    sample_time2 = 0.
+    for i, user in enumerate(users):
+        start = time()
+        posForUser = allPos[user]
+        if len(posForUser) == 0:
+            continue
+        sample_time2 += time() - start
+        posindex = np.random.randint(0, len(posForUser))
+        positem = posForUser[posindex]
+        while True:
+            negitem = np.random.randint(0, dataset.m_items)
+            if negitem in posForUser:
+                continue
+            else:
+                break
+        S.append([user, positem, negitem])
+        end = time()
+        sample_time1 += end - start
+    total = time() - total_start
+    return np.array(S)
+
+def MCNS_Sample_original_python(dataset, Recmodel):
     """
     the original impliment of BPR Sampling in LightGCN
     :return:
@@ -170,6 +223,7 @@ def UniformSample_original_python(dataset, Recmodel):
         sample_time1 += end - start
     total = time() - total_start
     return np.array(S)
+
 
 
 

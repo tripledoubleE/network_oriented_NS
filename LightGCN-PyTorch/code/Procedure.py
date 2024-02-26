@@ -29,7 +29,7 @@ def BPR_train_original(dataset, recommend_model, loss_class, epoch, neg_k=1, w=N
     bpr: utils.BPRLoss = loss_class
     
     with timer(name="Sample"):
-        S = utils.UniformSample_original(dataset, Recmodel)
+        S = utils.UniformSample_original(dataset)
     users = torch.Tensor(S[:, 0]).long()
     posItems = torch.Tensor(S[:, 1]).long()
     negItems = torch.Tensor(S[:, 2]).long()
