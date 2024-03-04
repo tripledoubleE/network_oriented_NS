@@ -1,0 +1,11 @@
+epochs: 1
+eval_args: 
+    split: {"RS": [4, 1, 1]}
+    group_by: user
+    order: TO
+    mode: uni5
+metrics: ["Recall", "MRR", "NDCG", "Hit", "Precision", "MAP"]
+mlp_hidden_size: [128,128] 
+user_inter_num_interval: '[2,inf)'
+item_inter_num_interval: '[2,inf)'
+train_neg_sample_args: {'distribution': 'uniform', 'sample_num': 5}

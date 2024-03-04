@@ -1,0 +1,14 @@
+EPOCH:
+0
+
+
+Precision:
+[0.05]
+
+Recall:
+[1.]
+
+NDCG:
+[0.36410281]
+
+

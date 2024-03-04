@@ -1,0 +1,27 @@
+{
+    "dataset": "ml-100k",
+    "USER_ID_FIELD": "UserId",
+    "ITEM_ID_FIELD": "ItemId",
+    "model": "LightGCN",
+
+    "load_col": {"inter": ["UserId", "ItemId"]
+                },
+    "epochs": 300,
+    "eval_args": {
+            "split": {"RS": [0.8,0.1,0.1]},
+            "order": "RO" ,
+            "group_by": "user",
+            "mode": "uni1" 
+    },
+    "metrics": ["Recall", "MRR", "NDCG", "Hit", "Precision", "MAP"],
+    "valid_metric": "MAP@10",
+    
+    "mlp_hidden_size": "[128,128]", 
+    
+    "learning_rate": 0.001,
+    "n_layers": 2, 
+    "reg_weight": 0.001,
+    "train_neg_sample_args": {"distribution": "uniform", "sample_num": 1},
+
+    "train_batch_size": 2048
+}
