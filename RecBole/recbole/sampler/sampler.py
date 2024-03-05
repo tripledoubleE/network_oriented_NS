@@ -642,7 +642,6 @@ class Sampler(AbstractSampler):
                 continue  
             
         return generate_examples
-    
 
     def _item_proj_sampling(self, sample_num, user_ids):
         csr_usr_item_graph = self.datasets[0].inter_matrix(form="csr").astype(np.float32)
@@ -653,18 +652,18 @@ class Sampler(AbstractSampler):
 
         G_item_projected = nx.bipartite.projected_graph(G_bipartite, nodes=df['item'].unique())
 
+        furthest_nodes = []
+
         for user_id in user_ids:
             allPos = list(self.datasets[0].inter_feat[self.iid_field][self.datasets[0].inter_feat[self.uid_field] == user_id].numpy())
-            
+            user_furthest_nodes = []
+
             while True:
                 random_element = random.choice(allPos)
 
-                # Initialize a dictionary to store the distance of each node from the start node
                 distances = {node: float('inf') for node in G_item_projected.nodes}
-
                 distances[random_element] = 0
 
-                # Perform a breadth-first search
                 queue = [random_element]
 
                 while queue:
@@ -674,16 +673,19 @@ class Sampler(AbstractSampler):
                             distances[neighbor] = distances[current_node] + 1
                             queue.append(neighbor)
 
-                # Find the node with the maximum distance
                 furthest_node = max(distances, key=distances.get)
 
                 if furthest_node in allPos:
                     continue
                 else:
-                    break
+                    user_furthest_nodes.append(furthest_node)
+                    allPos.append(furthest_node)  # Ensure the next iteration finds a different furthest node
+                    if len(user_furthest_nodes) == sample_num:
+                        break
 
-            return furthest_node
-        
+            furthest_nodes.extend(user_furthest_nodes)
+
+        return furthest_nodes
 
     def _dise_negative_sampling(self, user_ids):
         #cur_epoch, user_gcn_emb, item_gcn_emb, user, neg_candidates, pos_item
