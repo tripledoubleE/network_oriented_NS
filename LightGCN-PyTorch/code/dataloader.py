@@ -209,6 +209,19 @@ class LastFM(BasicDataset):
         for user in users:
             negItems.append(self.allNeg[user])
         return negItems
+    
+    def create_item_projected_graph(self):
+        csr_usr_item_graph = self.UserItemNet
+
+        rows, cols = csr_usr_item_graph.nonzero()
+        edges = np.column_stack((rows, cols))
+        df = pd.DataFrame(edges, columns=['user', 'item'])
+        G_bipartite = nx.from_pandas_edgelist(df, 'user', 'item')
+
+        G_item_projected = nx.bipartite.projected_graph(G_bipartite, nodes=df['item'].unique())
+        # Graph with 9177 nodes and 3892067 edges
+
+        return G_item_projected
             
     
     

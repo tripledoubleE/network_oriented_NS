@@ -416,6 +416,7 @@ def list_to_latex(convert_list, bigger_flag=True, subset_columns=[]):
 
 
 def get_environment(config):
+    
     gpu_usage = (
         get_gpu_usage(config["device"])
         if torch.cuda.is_available() and config["use_gpu"]

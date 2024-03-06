@@ -18,16 +18,13 @@ valid_metric: MAP@10
 
 mlp_hidden_size: "[128,128]"
 
-learning_rate: 0.001
-n_layers: 2
-reg_weight: 0.001
 train_neg_sample_args:
-  distribution: dens
+  distribution: item_proj
   sample_num: 1
 
 train_batch_size: 2048
 
-learning_rate: 0.01
+learning_rate: 0.001
 n_layers: 3
 reg_weight: 1e-04
 gpu_id: 0

@@ -81,17 +81,20 @@ class LightGCN(GeneralRecommender):
 
         ## FOR DENS NEGATIVE SAMPLING ###
         # gating
-        self.gamma = 0.3 # default
-
-        #self.device = torch.device("cuda:0") if config.cuda else torch.device("cpu")
-        self.device = torch.device("cuda:0")
-        self.user_gate = nn.Linear(self.latent_dim, self.latent_dim).to(self.device)
-        self.item_gate = nn.Linear(self.latent_dim, self.latent_dim).to(self.device)
-
-        self.pos_gate = nn.Linear(self.latent_dim, self.latent_dim).to(self.device)
-        self.neg_gate = nn.Linear(self.latent_dim, self.latent_dim).to(self.device)
-
         self.ns_technique = config["train_neg_sample_args"]["distribution"]
+        
+        if self.ns_technique == "dens" or self.ns_technique == "dns":
+            self.gamma = 0.3 # default
+
+            #self.device = torch.device("cuda:0") if config.cuda else torch.device("cpu")
+            self.device = torch.device("cuda:0")
+            self.user_gate = nn.Linear(self.latent_dim, self.latent_dim).to(self.device)
+            self.item_gate = nn.Linear(self.latent_dim, self.latent_dim).to(self.device)
+
+            self.pos_gate = nn.Linear(self.latent_dim, self.latent_dim).to(self.device)
+            self.neg_gate = nn.Linear(self.latent_dim, self.latent_dim).to(self.device)
+
+        
 
     def get_norm_adj_mat(self):
         r"""Get the normalized interaction matrix of users and items.

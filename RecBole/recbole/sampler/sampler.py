@@ -644,6 +644,7 @@ class Sampler(AbstractSampler):
         return generate_examples
 
     def _item_proj_sampling(self, sample_num, user_ids):
+        print("ITEM PROJECTED SAMPLING DETAILS...")
         csr_usr_item_graph = self.datasets[0].inter_matrix(form="csr").astype(np.float32)
         rows, cols = csr_usr_item_graph.nonzero()
         edges = np.column_stack((rows, cols))
@@ -651,12 +652,23 @@ class Sampler(AbstractSampler):
         G_bipartite = nx.from_pandas_edgelist(df, 'user', 'item')
 
         G_item_projected = nx.bipartite.projected_graph(G_bipartite, nodes=df['item'].unique())
+        print("Item proj graph created ... ")
 
         furthest_nodes = []
+        user_ids_tensor = torch.tensor(user_ids)
 
         for user_id in user_ids:
-            allPos = list(self.datasets[0].inter_feat[self.iid_field][self.datasets[0].inter_feat[self.uid_field] == user_id].numpy())
-            user_furthest_nodes = []
+
+            item_ids = self.datasets[0].inter_feat[self.iid_field]
+
+            # Find the indices where the user ID matches the specific_user_id
+            indices = torch.where(user_ids_tensor == user_id)[0]
+
+            # Extract item IDs for the specific user
+            allPos = list(set(item_ids[indices].tolist()))
+
+            #allPos = list(self.datasets[0].inter_feat[self.iid_field][self.datasets[0].inter_feat[self.uid_field] == user_id].numpy())
+            #user_furthest_nodes = []
 
             while True:
                 random_element = random.choice(allPos)
@@ -678,14 +690,13 @@ class Sampler(AbstractSampler):
                 if furthest_node in allPos:
                     continue
                 else:
-                    user_furthest_nodes.append(furthest_node)
-                    allPos.append(furthest_node)  # Ensure the next iteration finds a different furthest node
-                    if len(user_furthest_nodes) == sample_num:
-                        break
+                    furthest_nodes.append(furthest_node)
+                    break
+        
+        print("furthest nodes list len ... ")
+        print(len(furthest_nodes))
 
-            furthest_nodes.extend(user_furthest_nodes)
-
-        return furthest_nodes
+        return np.array(furthest_nodes)
 
     def _dise_negative_sampling(self, user_ids):
         #cur_epoch, user_gcn_emb, item_gcn_emb, user, neg_candidates, pos_item
