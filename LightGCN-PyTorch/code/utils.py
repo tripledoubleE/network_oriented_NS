@@ -244,6 +244,10 @@ def ItemProjSample_original_python(dataset):
     print("user num: ", dataset.n_users)
     print("item num: ", dataset.m_items)
     item_proj_graph = dataset.create_item_projected_graph()
+    print('item_proj_graph is created ')
+
+    distance_dict = dataset.get_distance_matrix(item_proj_graph)
+    print("distance is calculated .... ")
 
     user_num = dataset.trainDataSize
     users = np.random.randint(0, dataset.n_users, user_num)
@@ -259,7 +263,7 @@ def ItemProjSample_original_python(dataset):
         positem = posForUser[posindex]
         while True:
             #negitem = np.random.randint(0, dataset.m_items)
-            negitem = item_projected_sampling.furthest_node_from_given_node(item_proj_graph, positem)
+            negitem = item_projected_sampling.get_longest_path_node(distance_dict, positem)
             if negitem in posForUser:
                 continue
             else:

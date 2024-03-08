@@ -8,6 +8,7 @@ Design Dataset here
 Every dataset's index has to start at 0
 """
 import os
+from tqdm import tqdm
 from os.path import join
 import sys
 import torch
@@ -222,7 +223,34 @@ class LastFM(BasicDataset):
         # Graph with 9177 nodes and 3892067 edges
 
         return G_item_projected
-            
+
+    def get_distance_matrix(self, nx_graph):
+        
+        # print("a")
+        # length_generator = nx.all_pairs_shortest_path_length(nx_graph)
+        # print("b")
+        # length_dict = dict(length_generator)
+
+        # print(length_dict)
+        
+        # Calculate the number of pairs of nodes
+        num_pairs = nx.number_of_nodes(nx_graph) * (nx.number_of_nodes(nx_graph) - 1)
+
+        # Initialize a progress bar
+        pbar = tqdm(total=num_pairs, desc="Converting generator to dictionary")
+
+        # Initialize an empty dictionary
+        length_dict = {}
+
+        # Convert the generator to a dictionary
+        length_generator = nx.all_pairs_shortest_path_length(nx_graph)
+        for source, distances in length_generator:
+            length_dict[source] = dict(distances)
+            pbar.update(len(distances))
+
+        pbar.close()
+
+        return length_dict               
     
     
     def __getitem__(self, index):
@@ -486,3 +514,50 @@ class Loader(BasicDataset):
         # Graph with 9177 nodes and 3892067 edges
 
         return G_item_projected
+    
+    ################################# YAPILACAKLAR ######################################
+    
+    # distance matrix fonksiyonu (np array donsun)
+    ###############################################
+    # self.UserItemNet --> node id'ler nasil? datadaki id'ler m' yoksa remapped id ler mi?
+    # eger remapped id'ler ise GO ON 
+    # eger remapped id defilse donusum icin ekleme yapmak gerekicek (remapped dict gibi)
+
+    def get_distance_matrix(self, nx_graph):
+        
+        # print("a")
+        # length_generator = nx.all_pairs_shortest_path_length(nx_graph)
+        # print("b")
+        # length_dict = dict(length_generator)
+
+        # print(length_dict)
+        
+        # Calculate the number of pairs of nodes
+        num_pairs = nx.number_of_nodes(nx_graph) * (nx.number_of_nodes(nx_graph) - 1)
+
+        # Initialize a progress bar
+        pbar = tqdm(total=num_pairs, desc="Converting generator to dictionary")
+
+        # Initialize an empty dictionary
+        length_dict = {}
+
+        # Convert the generator to a dictionary
+        length_generator = nx.all_pairs_shortest_path_length(nx_graph)
+        for source, distances in length_generator:
+            length_dict[source] = dict(distances)
+            pbar.update(len(distances))
+
+        pbar.close()
+
+        return length_dict
+
+
+    # utils.ItemProjSample_original_python
+    ##########################################
+    # dataset.create_item_projected_graph --> gerek yok ???? 
+    # dataset.get_distance_matrix
+    # neg_item --> get_furthest_element(distance_matrix, pos_node) 
+
+    # get_furthest_element(distance_matrix, pos_node)
+    ##################################################
+    # pos node satirindaki en yuksek distance'a sahip elemanin index'ini dondur.

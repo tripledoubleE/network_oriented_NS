@@ -13,6 +13,7 @@ print(">>SEED:", world.seed)
 # ==============================
 import register
 from register import dataset
+from tqdm import tqdm
 
 Recmodel = register.MODELS[world.model_name](world.config, dataset)
 Recmodel = Recmodel.to(world.device)
@@ -38,7 +39,7 @@ else:
     world.cprint("not enable tensorflowboard")
 
 try:
-    for epoch in range(world.TRAIN_epochs):
+    for epoch in tqdm(range(world.TRAIN_epochs)):
         start = time.time()
         cprint("[TEST]")
         Procedure.Test(dataset, Recmodel, epoch, w, world.config['multicore'])
