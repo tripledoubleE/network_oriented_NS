@@ -32,7 +32,7 @@ if not os.path.exists(FILE_PATH):
 config = {}
 all_dataset = ['lastfm', 'gowalla', 'yelp2018', 'amazon-book']
 all_models  = ['mf', 'lgn']
-# config['batch_size'] = 4096
+config['batch_size'] = 4096
 config['bpr_batch_size'] = args.bpr_batch
 config['latent_dim_rec'] = args.recdim
 config['lightGCN_n_layers']= args.layer
@@ -46,6 +46,13 @@ config['decay'] = args.decay
 config['pretrain'] = args.pretrain
 config['A_split'] = False
 config['bigdata'] = False
+config['neg_sample'] = args.neg_sample
+
+config['alpha'] = args.alpha
+config['warmup'] = args.warmup
+config['gamma'] = args.gamma
+config['pool'] = args.pool
+
 
 GPU = torch.cuda.is_available()
 device = torch.device('cuda' if GPU else "cpu")

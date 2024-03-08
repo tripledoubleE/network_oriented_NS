@@ -23,6 +23,7 @@ from time import time
 
 from collections import defaultdict
 import networkx as nx
+import pickle
 
 class BasicDataset(Dataset):
     def __init__(self):
@@ -86,7 +87,7 @@ class LastFM(BasicDataset):
     Incldue graph information
     LastFM dataset
     """
-    def __init__(self, path="../data/lastfm"):
+    def __init__(self, config, path="../data/lastfm"):
         # train or test
         cprint("loading [last fm]")
         self.mode_dict = {'train':0, "test":1}
@@ -129,6 +130,62 @@ class LastFM(BasicDataset):
             neg = allItems - pos
             self.allNeg.append(np.array(list(neg)))
         self.__testDict = self.__build_test()
+
+        '''
+        if config['neg_sample'] == 'item_proj':
+            rows, cols = self.UserItemNet.nonzero()
+            edges = np.column_stack((rows, cols))
+            df = pd.DataFrame(edges, columns=['user', 'item'])
+            G_bipartite = nx.from_pandas_edgelist(df, 'user', 'item')
+
+            self.G_item_projected = nx.bipartite.projected_graph(G_bipartite, nodes=df['item'].unique())
+
+            # for item projected
+            num_pairs_item = nx.number_of_nodes(self.G_item_projected) * (nx.number_of_nodes(self.G_item_projected) - 1)
+
+            # Initialize a progress bar
+            pbar = tqdm(total=num_pairs_item, desc="Converting generator to dictionary")
+
+            # Initialize an empty dictionary
+            self.path_length_dict_item = {}
+
+            # Convert the generator to a dictionary
+            length_generator_item = nx.all_pairs_shortest_path_length(self.G_item_projected)
+            for source, distances in length_generator_item:
+                self.path_length_dict_item[source] = dict(distances)
+                pbar.update(len(distances))
+
+            pbar.close()
+
+        # for user projected 
+        if config['neg_sample'] == 'user_proj':
+            rows, cols = self.UserItemNet.nonzero()
+            edges = np.column_stack((rows, cols))
+            df = pd.DataFrame(edges, columns=['user', 'item'])
+            G_bipartite = nx.from_pandas_edgelist(df, 'user', 'item')
+
+            self.G_user_projected = nx.bipartite.projected_graph(G_bipartite, nodes=df['user'].unique())
+
+            num_pairs_user = nx.number_of_nodes(self.G_user_projected) * (nx.number_of_nodes(self.G_user_projected) - 1)
+
+            # Initialize a progress bar
+            pbar = tqdm(total=num_pairs_user, desc="Converting generator to dictionary")
+
+            # Initialize an empty dictionary
+            self.path_length_dict_user = {}
+
+            # Convert the generator to a dictionary
+            length_generator_user = nx.all_pairs_shortest_path_length(self.G_user_projected)
+            for source, distances in length_generator_user:
+                self.path_length_dict_user[source] = dict(distances)
+                pbar.update(len(distances))
+
+            pbar.close()
+
+            with open('/home/ece/Desktop/Negative_Sampling/LightGCN-PyTorch/user_my_dict.pkl', 'wb') as file:
+                pickle.dump(self.path_length_dict_user, file)
+        '''
+
 
     @property
     def n_users(self):

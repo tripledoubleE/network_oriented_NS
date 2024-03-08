@@ -43,4 +43,12 @@ def parse_args():
     parser.add_argument('--pretrain', type=int, default=0, help='whether we use pretrained weight or not')
     parser.add_argument('--seed', type=int, default=2020, help='random seed')
     parser.add_argument('--model', type=str, default='lgn', help='rec-model, support [mf, lgn]')
+    
+    parser.add_argument("--neg_sample", type=str, default="uniform", help="Negative sampling method")
+    # for DENS & Dynamic NS
+    parser.add_argument("--alpha", type=float, default=1, help="weight for relevant factor")
+    parser.add_argument("--warmup", type=float, default=100, help="weight for relevant factor")
+    parser.add_argument("--gamma", type=float, default=0.3, help="weight for gating task")
+    parser.add_argument("--pool", type=str, default='mean', help="[concat, mean, sum, final]")
+
     return parser.parse_args()

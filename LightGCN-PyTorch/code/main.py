@@ -46,9 +46,18 @@ try:
         # if epoch %10 == 0:
         #     cprint("[TEST]")
         #     Procedure.Test(dataset, Recmodel, epoch, w, world.config['multicore'])
-        #output_information = Procedure.BPR_train_original(dataset, Recmodel, bpr, epoch, neg_k=Neg_k,w=w)
-        #output_information = Procedure.MCNS_train(dataset, Recmodel, bpr, epoch, w=w)
-        output_information = Procedure.ItemProj_train_original(dataset, Recmodel, bpr, epoch, neg_k=Neg_k,w=w)
+        if world.config['neg_sample'] == 'uniform':
+            output_information = Procedure.BPR_train_original(dataset, Recmodel, bpr, epoch, neg_k=Neg_k,w=w)
+        elif world.config['neg_sample'] == 'mcns':
+            output_information = Procedure.MCNS_train(dataset, Recmodel, bpr, epoch, w=w)
+        elif world.config['neg_sample'] == 'item_proj':
+            output_information = Procedure.ItemProj_train_original(dataset, Recmodel, bpr, epoch, neg_k=Neg_k,w=w)
+        elif world.config['neg_sample'] == 'user_proj':
+            output_information = Procedure.UserProj_train_original(dataset, Recmodel, bpr, epoch, neg_k=Neg_k,w=w)
+        elif world.config['neg_sample'] == 'dens':
+            output_information = Procedure.Dens_train_original(dataset, Recmodel, bpr, epoch, neg_k=Neg_k,w=w)
+        elif world.config['neg_sample'] == 'dynamic':
+            output_information = Procedure.Dynamic_train_original(dataset, Recmodel, bpr, epoch, neg_k=Neg_k,w=w)
 
         print(f'EPOCH[{epoch+1}/{world.TRAIN_epochs}] {output_information}')
         torch.save(Recmodel.state_dict(), weight_file)

@@ -115,7 +115,23 @@ class LightGCN(BasicModel):
         self.f = nn.Sigmoid()
         self.Graph = self.dataset.getSparseGraph()
         print(f"lgn is already to go(dropout:{self.config['dropout']})")
+        
+        # for dens and dynamic NS
 
+        if self.config['neg_sample'] == 'dens' or self.config['neg_sample'] == 'dens':
+            self.alpha = self.config['alpha']
+            self.warmup = self.config['warmup']
+            self.emb_size = self.config['rec_dim']
+            
+            GPU = torch.cuda.is_available()
+            self.device = torch.device("cuda:0") if GPU else torch.device("cpu")
+
+            self.user_gate = nn.Linear(self.emb_size, self.emb_size).to(self.device)
+            self.item_gate = nn.Linear(self.emb_size, self.emb_size).to(self.device)
+
+            self.pos_gate = nn.Linear(self.emb_size, self.emb_size).to(self.device)
+            self.neg_gate = nn.Linear(self.emb_size, self.emb_size).to(self.device)        
+        
         # print("save_txt")
     def __dropout_x(self, x, keep_prob):
         size = x.size()

@@ -17,6 +17,8 @@ from model import PairWiseModel
 from sklearn.metrics import roc_auc_score
 import random
 import os
+import pickle
+from tqdm import tqdm
 
 from sources import mcns_sampling, item_projected_sampling
 
@@ -243,10 +245,63 @@ def ItemProjSample_original_python(dataset):
 
     print("user num: ", dataset.n_users)
     print("item num: ", dataset.m_items)
-    item_proj_graph = dataset.create_item_projected_graph()
-    print('item_proj_graph is created ')
 
-    distance_dict = dataset.get_distance_matrix(item_proj_graph)
+    distance_dict = dataset.path_length_dict_item
+    print("distance is calculated .... ")
+    #file_path = '/home/ece/Desktop/Negative_Sampling/LightGCN-PyTorch/item_my_dict.pkl'
+
+    #with open(file_path, 'rb') as file:
+    #    data = pickle.load(file)
+    
+    #distance_dict = data
+
+    user_num = dataset.trainDataSize
+    users = np.random.randint(0, dataset.n_users, user_num)
+    allPos = dataset.allPos
+    S = []
+
+    for i, user in enumerate(tqdm(users, desc='Sampling')):
+        posForUser = allPos[user]
+        if len(posForUser) == 0:
+            continue
+        posindex = np.random.randint(0, len(posForUser))
+        positem = posForUser[posindex]
+        while True:
+            #negitem = np.random.randint(0, dataset.m_items)
+            negitem = item_projected_sampling.get_longest_path_node(distance_dict, positem)
+            if negitem in posForUser:
+                continue
+            else:
+                break
+        S.append([user, positem, negitem])
+        #print(S)
+
+    return np.array(S)
+
+
+def UserProjSample_original(dataset, neg_ratio = 1):
+
+    dataset : BasicDataset
+
+    S = UserProjSample_original_python(dataset)
+    
+    print(S.shape)
+    
+    return S  
+ 
+def UserProjSample_original_python(dataset):
+    """
+    the original impliment of BPR Sampling in LightGCN
+    :return:
+        np.array
+    """
+
+    dataset : BasicDataset
+
+    print("user num: ", dataset.n_users)
+    print("item num: ", dataset.m_items)
+
+    distance_dict = dataset.path_length_dict_user
     print("distance is calculated .... ")
 
     user_num = dataset.trainDataSize
@@ -254,8 +309,7 @@ def ItemProjSample_original_python(dataset):
     allPos = dataset.allPos
     S = []
 
-    for i, user in enumerate(users):
-        start = time()
+    for i, user in tqdm(enumerate(users)):
         posForUser = allPos[user]
         if len(posForUser) == 0:
             continue
@@ -271,6 +325,133 @@ def ItemProjSample_original_python(dataset):
         S.append([user, positem, negitem])
 
     return np.array(S)
+
+
+def Dens_Sample_original(dataset, Recmodel, cur_epoch):
+
+    dataset : BasicDataset
+
+    S = Dens_Sample_original_python(dataset, Recmodel, cur_epoch)
+    
+    print(S.shape)
+    
+    return S  
+ 
+def Dens_Sample_original_python(dataset, Recmodel, cur_epoch):
+    """
+    the original impliment of BPR Sampling in LightGCN
+    :return:
+        np.array
+    """
+    # dataset, Recmodel, cur_epoch, user_gcn_emb, item_gcn_emb, user, neg_candidates, pos_item
+
+    dataset : BasicDataset
+    Recmodel: model.LightGCN
+    user_gcn_emb = Recmodel.embedding_user.weight
+    item_gcn_emb = Recmodel.embedding_item.weight
+
+    user_num = dataset.trainDataSize
+    users = np.random.randint(0, dataset.n_users, user_num)
+    allPos = dataset.allPos
+    allNegs = dataset.allNe
+    S = []
+
+    for i, user in tqdm(enumerate(users)):
+        batch_size = user.shape[0]
+        posForUser = allPos[user]
+        neg_candidate_for_user = allNegs[user]
+        if len(posForUser) == 0:
+            continue
+        posindex = np.random.randint(0, len(posForUser))
+        positem = posForUser[posindex]
+        
+        while True:
+            #negitem = np.random.randint(0, dataset.m_items)
+            s_e, p_e = user_gcn_emb[user], item_gcn_emb[positem]
+            n_e = item_gcn_emb[neg_candidate_for_user]
+            gate_p = torch.sigmoid(Recmodel.item_gate(p_e) + Recmodel.user_gate(s_e))
+            gated_p_e = p_e * gate_p 
+
+            gate_n = torch.sigmoid(Recmodel.neg_gate(n_e) + Recmodel.pos_gate(gated_p_e).unsqueeze(1))
+            gated_n_e = n_e * gate_n 
+
+            warmup = 100
+            n_e_sel = (1 - min(1, cur_epoch / warmup)) * n_e - gated_n_e 
+
+            scores = (s_e.unsqueeze(dim=1) * n_e_sel).sum(dim=-1)  # [batch_size, n_negs, n_hops+1]
+            indices = torch.max(scores, dim=1)[1].detach()
+            neg_items_emb_ = n_e.permute([0, 2, 1, 3])  # [batch_size, n_hops+1, n_negs, channel]
+            # [batch_size, n_hops+1, channel]
+            negitem =  neg_items_emb_[[[i] for i in range(batch_size)],
+                range(neg_items_emb_.shape[1]), indices, :]
+
+            if negitem in posForUser:
+                continue
+            else:
+                break
+        S.append([user, positem, negitem])
+
+    return np.array(S)
+
+def Dynamic_Sample_original(dataset, Recmodel):
+
+    dataset : BasicDataset
+
+    S = Dynamic_Sample_original_python(dataset, Recmodel)
+    
+    print(S.shape)
+    
+    return S  
+ 
+def Dynamic_Sample_original_python(dataset, Recmodel):
+    """
+    the original impliment of BPR Sampling in LightGCN
+    :return:
+        np.array
+    """
+    # dataset, Recmodel, cur_epoch, user_gcn_emb, item_gcn_emb, user, neg_candidates, pos_item
+
+    dataset : BasicDataset
+    Recmodel: model.LightGCN
+    user_gcn_emb = Recmodel.embedding_user.weight
+    item_gcn_emb = Recmodel.embedding_item.weight
+
+    user_num = dataset.trainDataSize
+    users = np.random.randint(0, dataset.n_users, user_num)
+    allPos = dataset.allPos
+    allNegs = dataset.allNeg
+    S = []
+
+    for i, user in tqdm(enumerate(users)):
+        posForUser = allPos[user]
+        neg_candidate_for_user = allNegs[user]
+        if len(posForUser) == 0:
+            continue
+        posindex = np.random.randint(0, len(posForUser))
+        positem = posForUser[posindex]
+        
+        while True:
+            #negitem = np.random.randint(0, dataset.m_items)
+            s_e = user_gcn_emb[user]
+            n_e = item_gcn_emb[neg_candidate_for_user]
+
+            #if self.pool == 'mean':
+            s_e = s_e.mean(dim=1)  # [batch_size, channel]
+            n_e = n_e.mean(dim=2)  # [batch_size, n_negs, channel]
+
+            """dynamic negative sampling"""
+            scores = (s_e.unsqueeze(dim=1) * n_e).sum(dim=-1)  # [batch_size, n_negs]
+            indices = torch.max(scores, dim=1)[1].detach()  # [batch_size]
+            negitem = torch.gather(neg_candidate_for_user, dim=1, index=indices.unsqueeze(-1)).squeeze()
+
+            if negitem in posForUser:
+                continue
+            else:
+                break
+        S.append([user, positem, negitem])
+
+    return np.array(S)
+
 
 
 # ===================end samplers==========================
