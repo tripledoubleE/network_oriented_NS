@@ -118,19 +118,20 @@ class LightGCN(BasicModel):
         
         # for dens and dynamic NS
 
-        if self.config['neg_sample'] == 'dens' or self.config['neg_sample'] == 'dens':
+        if self.config['neg_sample'] == 'dens' or self.config['neg_sample'] == 'dynamic':
             self.alpha = self.config['alpha']
             self.warmup = self.config['warmup']
-            self.emb_size = self.config['rec_dim']
+            self.emb_size = self.config['latent_dim_rec']
+            self.batch_size = self.config['bpr_batch_size']
             
             GPU = torch.cuda.is_available()
             self.device = torch.device("cuda:0") if GPU else torch.device("cpu")
 
-            self.user_gate = nn.Linear(self.emb_size, self.emb_size).to(self.device)
-            self.item_gate = nn.Linear(self.emb_size, self.emb_size).to(self.device)
+            self.user_gate = nn.Linear(self.batch_size, self.batch_size).to(self.device)
+            self.item_gate = nn.Linear(self.batch_size, self.batch_size).to(self.device)
 
-            self.pos_gate = nn.Linear(self.emb_size, self.emb_size).to(self.device)
-            self.neg_gate = nn.Linear(self.emb_size, self.emb_size).to(self.device)        
+            self.pos_gate = nn.Linear(self.batch_size, self.batch_size).to(self.device)
+            self.neg_gate = nn.Linear(self.batch_size, self.batch_size).to(self.device)        
         
         # print("save_txt")
     def __dropout_x(self, x, keep_prob):

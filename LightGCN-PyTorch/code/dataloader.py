@@ -25,6 +25,12 @@ from collections import defaultdict
 import networkx as nx
 import pickle
 
+import dgl
+import dgl.nn as dglnn
+from torch.optim import SparseAdam
+from sklearn.metrics.pairwise import cosine_similarity
+
+
 class BasicDataset(Dataset):
     def __init__(self):
         print("init dataset")
@@ -130,63 +136,261 @@ class LastFM(BasicDataset):
             neg = allItems - pos
             self.allNeg.append(np.array(list(neg)))
         self.__testDict = self.__build_test()
+        
+        if config['neg_sample'] == 'alpha75':
+            rows, cols = self.UserItemNet.nonzero()
+            edges = np.column_stack((rows, cols))
+            df = pd.DataFrame(edges, columns=['user', 'item'])
 
-        '''
+            def convert_id_to_string(id_value, prefix):
+                return f'{prefix}_{id_value}'
+
+            # Convert user IDs
+            df['user'] = df['user'].apply(lambda x: convert_id_to_string(x, 'u'))
+
+            # Convert item IDs
+            df['item'] = df['item'].apply(lambda x: convert_id_to_string(x, 'i'))
+
+            #G_bipartite = nx.from_pandas_edgelist(df, 'user', 'item', create_using=nx.Graph)
+
+            self.G_bipartite=nx.Graph()
+            self.G_bipartite.add_nodes_from(df['user'],bipartite=0)
+            self.G_bipartite.add_nodes_from(df['item'],bipartite=1)
+            self.G_bipartite.add_edges_from([(row.user, row.item) for row in df.itertuples(index=False)])
+
+            nodes = list(self.G_bipartite.nodes())
+            mapping = {node: int(node.split('_')[1]) for node in nodes}
+            self.G_bipartite = nx.relabel_nodes(self.G_bipartite, mapping)
+
         if config['neg_sample'] == 'item_proj':
             rows, cols = self.UserItemNet.nonzero()
             edges = np.column_stack((rows, cols))
             df = pd.DataFrame(edges, columns=['user', 'item'])
-            G_bipartite = nx.from_pandas_edgelist(df, 'user', 'item')
+            
+            def convert_id_to_string(id_value, prefix):
+                return f'{prefix}_{id_value}'
+
+            # Convert user IDs
+            df['user'] = df['user'].apply(lambda x: convert_id_to_string(x, 'u'))
+
+            # Convert item IDs
+            df['item'] = df['item'].apply(lambda x: convert_id_to_string(x, 'i'))
+
+            #G_bipartite = nx.from_pandas_edgelist(df, 'user', 'item', create_using=nx.Graph)
+            
+            G_bipartite=nx.Graph()
+            G_bipartite.add_nodes_from(list(set(df['user'])),bipartite=0)
+            G_bipartite.add_nodes_from(list(set(df['item'])),bipartite=1)
+            G_bipartite.add_edges_from([(row.user, row.item) for row in df.itertuples(index=False)])
+            
 
             self.G_item_projected = nx.bipartite.projected_graph(G_bipartite, nodes=df['item'].unique())
 
-            # for item projected
-            num_pairs_item = nx.number_of_nodes(self.G_item_projected) * (nx.number_of_nodes(self.G_item_projected) - 1)
+            num_pairs_user = nx.number_of_nodes(self.G_item_projected) * (nx.number_of_nodes(self.G_item_projected) - 1)
 
+
+            nodes = list(self.G_item_projected.nodes())
+            mapping = {node: int(node.split('_')[1]) for node in nodes}
+            self.G_item_projected = nx.relabel_nodes(self.G_item_projected, mapping)
+    
             # Initialize a progress bar
-            pbar = tqdm(total=num_pairs_item, desc="Converting generator to dictionary")
+            pbar = tqdm(total=num_pairs_user, desc="Converting generator to dictionary")
 
             # Initialize an empty dictionary
             self.path_length_dict_item = {}
-
+            self.remap_dict = {}
+            count = 0
             # Convert the generator to a dictionary
             length_generator_item = nx.all_pairs_shortest_path_length(self.G_item_projected)
-            for source, distances in length_generator_item:
-                self.path_length_dict_item[source] = dict(distances)
-                pbar.update(len(distances))
 
+            for source, distances in length_generator_item:
+                self.remap_dict[source] = count
+                self.path_length_dict_item[source] = dict(distances)
+                count += 1
+                pbar.update(len(distances))
             pbar.close()
 
         # for user projected 
         if config['neg_sample'] == 'user_proj':
+
             rows, cols = self.UserItemNet.nonzero()
             edges = np.column_stack((rows, cols))
             df = pd.DataFrame(edges, columns=['user', 'item'])
-            G_bipartite = nx.from_pandas_edgelist(df, 'user', 'item')
+           
+            def convert_id_to_string(id_value, prefix):
+                return f'{prefix}_{id_value}'
+
+            # Convert user IDs
+            df['user'] = df['user'].apply(lambda x: convert_id_to_string(x, 'u'))
+
+            # Convert item IDs
+            df['item'] = df['item'].apply(lambda x: convert_id_to_string(x, 'i'))
+            
+            G_bipartite=nx.Graph()
+            G_bipartite.add_nodes_from(df['user'],bipartite=0)
+            G_bipartite.add_nodes_from(df['item'],bipartite=1)
+            G_bipartite.add_edges_from([(row.user, row.item) for row in df.itertuples(index=False)])
+            
+            #is_bipartite = nx.is_bipartite(G_bipartite)
 
             self.G_user_projected = nx.bipartite.projected_graph(G_bipartite, nodes=df['user'].unique())
 
             num_pairs_user = nx.number_of_nodes(self.G_user_projected) * (nx.number_of_nodes(self.G_user_projected) - 1)
+
+            nodes = list(self.G_user_projected.nodes())
+            mapping = {node: int(node.split('_')[1]) for node in nodes}
+            self.G_user_projected = nx.relabel_nodes(self.G_user_projected, mapping)
 
             # Initialize a progress bar
             pbar = tqdm(total=num_pairs_user, desc="Converting generator to dictionary")
 
             # Initialize an empty dictionary
             self.path_length_dict_user = {}
-
+            self.remap_dict = {}
+            count = 0
             # Convert the generator to a dictionary
             length_generator_user = nx.all_pairs_shortest_path_length(self.G_user_projected)
+
             for source, distances in length_generator_user:
+                self.remap_dict[source] = count
                 self.path_length_dict_user[source] = dict(distances)
+                count += 1
                 pbar.update(len(distances))
 
+
+            pbar.close()
+        
+            #with open('/home/ece/Desktop/Negative_Sampling/LightGCN-PyTorch/ABC_user_my_dict.pkl', 'wb') as file:
+            #    pickle.dump(self.path_length_dict_user, file)
+
+        if config['neg_sample'] == 'item_proj_SimRank':
+            rows, cols = self.UserItemNet.nonzero()
+            edges = np.column_stack((rows, cols))
+            df = pd.DataFrame(edges, columns=['user', 'item'])
+            
+            def convert_id_to_string(id_value, prefix):
+                return f'{prefix}_{id_value}'
+
+            # Convert user IDs
+            df['user'] = df['user'].apply(lambda x: convert_id_to_string(x, 'u'))
+
+            # Convert item IDs
+            df['item'] = df['item'].apply(lambda x: convert_id_to_string(x, 'i'))
+
+            #G_bipartite = nx.from_pandas_edgelist(df, 'user', 'item', create_using=nx.Graph)
+            
+            G_bipartite=nx.Graph()
+            G_bipartite.add_nodes_from(list(set(df['user'])),bipartite=0)
+            G_bipartite.add_nodes_from(list(set(df['item'])),bipartite=1)
+            G_bipartite.add_edges_from([(row.user, row.item) for row in df.itertuples(index=False)])
+            
+
+            self.G_item_projected = nx.bipartite.projected_graph(G_bipartite, nodes=df['item'].unique())  
+
+            nodes = list(self.G_item_projected.nodes())
+            mapping = {node: int(node.split('_')[1]) for node in nodes}
+            self.G_item_projected = nx.relabel_nodes(self.G_item_projected, mapping)
+
+            self.simRank_dict = nx.simrank_similarity(self.G_item_projected)
+
+        if config['neg_sample'] == 'item_proj_Panther':
+            rows, cols = self.UserItemNet.nonzero()
+            edges = np.column_stack((rows, cols))
+            df = pd.DataFrame(edges, columns=['user', 'item'])
+            
+            def convert_id_to_string(id_value, prefix):
+                return f'{prefix}_{id_value}'
+
+            # Convert user IDs
+            df['user'] = df['user'].apply(lambda x: convert_id_to_string(x, 'u'))
+
+            # Convert item IDs
+            df['item'] = df['item'].apply(lambda x: convert_id_to_string(x, 'i'))
+
+            #G_bipartite = nx.from_pandas_edgelist(df, 'user', 'item', create_using=nx.Graph)
+            
+            G_bipartite=nx.Graph()
+            G_bipartite.add_nodes_from(list(set(df['user'])),bipartite=0)
+            G_bipartite.add_nodes_from(list(set(df['item'])),bipartite=1)
+            G_bipartite.add_edges_from([(row.user, row.item) for row in df.itertuples(index=False)])
+            
+
+            self.G_item_projected = nx.bipartite.projected_graph(G_bipartite, nodes=df['item'].unique())  
+
+            nodes = list(self.G_item_projected.nodes())
+            mapping = {node: int(node.split('_')[1]) for node in nodes}
+            self.G_item_projected = nx.relabel_nodes(self.G_item_projected, mapping)
+
+            self.panther_sim_dict = {}
+            num_pairs = nx.number_of_nodes(self.G_item_projected) * (nx.number_of_nodes(self.G_item_projected) - 1)
+
+            pbar = tqdm(total=num_pairs, desc="Calculating Panther similarity")
+
+            for node in list(mapping.values()):
+                panther_sim = nx.panther_similarity(self.G_item_projected, node, k=nx.number_of_nodes(self.G_item_projected) - 1)
+                self.panther_sim_dict[node] = panther_sim
+                pbar.update(1)
+            
             pbar.close()
 
-            with open('/home/ece/Desktop/Negative_Sampling/LightGCN-PyTorch/user_my_dict.pkl', 'wb') as file:
-                pickle.dump(self.path_length_dict_user, file)
-        '''
+        if config['neg_sample'] == 'metapath2vec':
 
+            """
+            Trains a MetaPath2Vec model on the user-item interaction data and returns user and item embeddings.
 
+            Args:
+                UserItemNet: A scipy sparse matrix representing user-item interactions.
+
+            Returns:
+                A tuple containing two dictionaries:
+                    - user_embeddings: Dictionary mapping real user IDs to their corresponding embeddings.
+                    - item_embeddings: Dictionary mapping real item IDs to their corresponding embeddings.
+            """
+
+            # Node ID mapping
+            id_mapping = {}
+
+            g = dgl.bipartite_from_scipy(self.UserItemNet, utype='_U', etype='_user_item_edge', vtype='_I')
+            
+            print(g)
+
+            # Define metapath for user-item interactions
+            metapath = ['_user_item_edge']
+
+            # Create the MetaPath2Vec model
+            model = dglnn.MetaPath2Vec(g, metapath, emb_dim=128, window_size=1, negative_size=5, sparse=True)
+
+            # Define data loader for efficient batch training
+            dataloader = DataLoader(torch.arange(g.num_nodes('_U')), batch_size=128, shuffle=True, collate_fn=model.sample)
+
+            # Define optimizer (adjust parameters as needed)
+            optimizer = SparseAdam(model.parameters(), lr=0.025)
+
+            # Train the model
+            for epoch in range(100):  # Adjust number of epochs based on dataset size and complexity
+                for (pos_u, pos_v, neg_v) in dataloader:
+                    loss = model(pos_u, pos_v, neg_v)
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+
+            # Retrieve learned embeddings
+            user_nids = torch.LongTensor(model.local_to_global_nid['_U'])
+            user_emb = model.node_embed(user_nids).detach().cpu().numpy()
+
+            item_nids = torch.LongTensor(model.local_to_global_nid['_I'])
+            item_emb = model.node_embed(item_nids).detach().cpu().numpy()
+
+            similarity_matrix = cosine_similarity(item_emb)
+
+            self.min_indices = np.argmin(similarity_matrix, axis=1)
+            self.min_indices_dict = {}
+            for i, row in enumerate(similarity_matrix):
+                # Get indices of the 5 smallest cosine values excluding the diagonal (self-similarity)
+                min_indices = np.argsort(row)[1:11]
+                self.min_indices_dict[i] = min_indices
+
+    
     @property
     def n_users(self):
         return 1892

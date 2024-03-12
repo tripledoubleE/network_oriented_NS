@@ -48,6 +48,8 @@ try:
         #     Procedure.Test(dataset, Recmodel, epoch, w, world.config['multicore'])
         if world.config['neg_sample'] == 'uniform':
             output_information = Procedure.BPR_train_original(dataset, Recmodel, bpr, epoch, neg_k=Neg_k,w=w)
+        if world.config['neg_sample'] == 'alpha75':
+            output_information = Procedure.Alpha75_train_original(dataset, Recmodel, bpr, epoch, neg_k=Neg_k,w=w)
         elif world.config['neg_sample'] == 'mcns':
             output_information = Procedure.MCNS_train(dataset, Recmodel, bpr, epoch, w=w)
         elif world.config['neg_sample'] == 'item_proj':
@@ -58,6 +60,13 @@ try:
             output_information = Procedure.Dens_train_original(dataset, Recmodel, bpr, epoch, neg_k=Neg_k,w=w)
         elif world.config['neg_sample'] == 'dynamic':
             output_information = Procedure.Dynamic_train_original(dataset, Recmodel, bpr, epoch, neg_k=Neg_k,w=w)
+        elif world.config['neg_sample'] == 'item_proj_SimRank':
+            output_information = Procedure.SimRank_train_original(dataset, Recmodel, bpr, epoch, neg_k=Neg_k,w=w)
+        elif world.config['neg_sample'] == 'item_proj_Panther':
+            output_information = Procedure.Panther_train_original(dataset, Recmodel, bpr, epoch, neg_k=Neg_k,w=w)
+        elif world.config['neg_sample'] == 'metapath2vec':
+            output_information = Procedure.MetaPath2Vec_train_original(dataset, Recmodel, bpr, epoch, neg_k=Neg_k,w=w)
+        
 
         print(f'EPOCH[{epoch+1}/{world.TRAIN_epochs}] {output_information}')
         torch.save(Recmodel.state_dict(), weight_file)
