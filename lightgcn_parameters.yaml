@@ -6,7 +6,7 @@ ITEM_ID_FIELD: artist_id
 load_col:
   inter: [user_id, artist_id]
 
-epochs: 2
+epochs: 100
 eval_args:
   split:
     RS: [0.8, 0.1, 0.1]
@@ -18,8 +18,8 @@ valid_metric: MAP@10
 
 mlp_hidden_size: "[128,128]"
 
-train_neg_sample_args:
-  distribution: item_proj
+train_neg_sample_args: 
+  distribution: uniform
   sample_num: 1
 
 train_batch_size: 2048

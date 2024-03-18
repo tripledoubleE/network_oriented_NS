@@ -9,10 +9,10 @@
 
 import argparse
 
-
+'''
 from recbole.quick_start import run_recbole
 run_recbole(model='LightGCN', config_file_list=['/home/ece/Desktop/Negative_Sampling/lightgcn_parameters.yaml'])
-
+'''
 
 '''
 
@@ -70,7 +70,6 @@ if __name__ == "__main__":
     )
 
 '''
-'''
 import logging
 from logging import getLogger
 from recbole.config import Config
@@ -91,17 +90,19 @@ import json
 import argparse
 import csv
 import pickle
-
+'''
 def get_parameter_dict(json_file_path):
     # Open the JSON file in read mode
     with open(json_file_path, 'r') as json_file:
         # Use json.load() to load the JSON data into a dictionary
         parameter_dict = json.load(json_file)
     return parameter_dict
+'''
 
-def get_config(model_name, parameter_dict):
+def get_config():#(model_name, parameter_dict):
     #dataset name is changing according to your dataset name
-    config = Config(model= model_name.__name__, dataset='ml-100k', config_dict=parameter_dict)
+    #config = Config(model= model_name.__name__, dataset='ml-100k', config_dict=parameter_dict)
+    config = Config(model='LightGCN', config_file_list=['/home/ece/Desktop/Negative_Sampling/lightgcn_parameters.yaml'])
 
     # init random seed
     init_seed(config['seed'], config['reproducibility'])
@@ -160,7 +161,7 @@ def prediction(test_data, dataset, model, config):
                     #key3 -> [topk_iid_list]
                     #key4 -> [external_item_list]
 
-    for element in tqdm(test_data.dataset.field2id_token['UserId']):
+    for element in tqdm(test_data.dataset.field2id_token['user_id']):
         if element == '[PAD]':
             pass
         else:
@@ -169,7 +170,7 @@ def prediction(test_data, dataset, model, config):
             score = full_sort_scores(uid_series, model, test_data, device=config['device'])
             #prediction_dict[element]["full_sort_scores"] = score
 
-            topk_score, topk_iid_list = full_sort_topk(uid_series, model, test_data, k=5, device=config['device'])
+            topk_score, topk_iid_list = full_sort_topk(uid_series, model, test_data, k=10, device=config['device'])
             #prediction_dict[element]["topk_score"] = topk_score
             #prediction_dict[element]["topk_iid_list"] = topk_iid_list
 
@@ -180,7 +181,7 @@ def prediction(test_data, dataset, model, config):
     return prediction_dict
 
 
-def main(model_name_str, json_file_path, results_file_path):
+def main(model_name_str, results_file_path):
     
     model_classes = {
     "ItemKNN": ItemKNN,
@@ -236,10 +237,11 @@ def main(model_name_str, json_file_path, results_file_path):
     model_name = model_classes[model_name_str]
 
     # get parameters
-    parameter_dict = get_parameter_dict(json_file_path)
+    #parameter_dict = get_parameter_dict(json_file_path)
 
     # get config
-    config, logger, dataset = get_config(model_name, parameter_dict)
+    #config, logger, dataset = get_config(model_name, parameter_dict)
+    config, logger, dataset = get_config()
 
     # split data
     train_data, valid_data, test_data = dataset_split(config, dataset)
@@ -282,16 +284,15 @@ def main(model_name_str, json_file_path, results_file_path):
         writer.writerow(['user_id', 'recomm_items'])
         # Write the data rows
         writer.writerows(flattened_data)
- '''   
-'''
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("param1", help="Model Name")
-    parser.add_argument("param2", help="Parameter dict path")
-    parser.add_argument("param3", help="Results path")
+    #parser.add_argument("param2", help="Parameter dict path")
+    parser.add_argument("param2", help="Results path")
     args = parser.parse_args()
     
-    main(args.param1, args.param2, args.param3)
+    main(args.param1, args.param2)
 
-'''
+

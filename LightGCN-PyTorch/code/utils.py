@@ -20,7 +20,8 @@ import os
 import pickle
 from tqdm import tqdm
 import math
-import networkx as nx
+import itertools
+import pandas as pd
 
 from sources import mcns_sampling, item_projected_sampling
 
@@ -55,6 +56,54 @@ class BPRLoss:
         self.opt.step()
 
         return loss.cpu().item()
+    
+def NoSampling_original(dataset, neg_ratio = 1):
+
+    dataset : BasicDataset
+
+    S = NoSampling_original_python(dataset)
+
+    with open('/home/ece/Desktop/Negative_Sampling/LightGCN-PyTorch/data/lastfm/train_with_negs_1_100.pkl', 'wb') as f:
+        pickle.dump(S, f)
+    
+    return S  
+ 
+def NoSampling_original_python(dataset):
+    """
+    the original impliment of BPR Sampling in LightGCN
+    :return:
+        np.array
+    """
+    dataset : BasicDataset
+
+    print("NO SAMPLING !!!")
+    print("user num: ", dataset.n_users)
+    print("item num: ", dataset.m_items)
+    
+
+    user_num = dataset.trainDataSize
+    users = np.random.randint(0, dataset.n_users, user_num)
+    allPos = dataset.allPos
+    allNegs = dataset.allNeg
+    
+    S = []
+
+    for i, user in enumerate(tqdm(users, desc='Sampling')):
+        posForUser = allPos[user]
+        negForUser = allNegs[user]
+        if len(posForUser) == 0:
+            continue
+        posindex = np.random.randint(0, len(posForUser))
+        positem = posForUser[posindex]
+
+        random_neg_items = random.sample(list(negForUser), 100)
+        
+        for negitem in random_neg_items:
+            S.append([user, positem, negitem])
+
+    return np.array(S)
+
+
 
 def UniformSample_original(dataset, neg_ratio = 1):
 
@@ -68,6 +117,9 @@ def UniformSample_original(dataset, neg_ratio = 1):
     
     print("UniformSample_original ")
     print(S.shape)
+
+    with open('/home/ece/Desktop/Negative_Sampling/LightGCN-PyTorch/data/lastfm/train_with_negs_1_1.pkl', 'wb') as f:
+        pickle.dump(S, f)
     
     return S  
  
@@ -685,6 +737,83 @@ def MetaPath2Vec_Sample_original_python(dataset):
         #print(S)
 
     return np.array(S)
+
+
+# Naive_random_walk_original
+def Naive_random_walk_original(dataset, neg_ratio = 1):
+
+    dataset : BasicDataset
+
+    S = Naive_random_walk_original_python(dataset)
+    
+    return S  
+ 
+def Naive_random_walk_original_python(dataset):
+    """
+    the original impliment of BPR Sampling in LightGCN
+    :return:
+        np.array
+    """
+    print("NAIVE RANDOM WALK SAMPLING FUNCTION !!!!!")
+
+    dataset : BasicDataset
+
+    user_num = dataset.trainDataSize
+    users = np.random.randint(0, dataset.n_users, user_num)
+    allPos = dataset.allPos
+    path_length_dict = dataset.path_length_dict
+    path_length_prob_dict = dataset.path_length_prob_dict
+    S = []
+
+    for i, user in enumerate(users):
+        posForUser = allPos[user]
+        if len(posForUser) == 0:
+            continue
+        posindex = np.random.randint(0, len(posForUser))
+        positem = posForUser[posindex]
+
+        # uniform negative sampling
+        while True:
+            negitem_uniform = np.random.randint(0, dataset.m_items)
+            if negitem_uniform in posForUser:
+                continue
+            else:
+                break
+        S.append([user, positem, negitem_uniform])
+
+        # naive random walk sampling
+        while True:
+            user_id = 'u_' + str(user)
+            path_length_prob_list_for_user = path_length_prob_dict[user_id]
+            
+            # create candidate list that contains only items
+            filtered_list = [item for item in path_length_prob_list_for_user if item.startswith('i_')]
+
+            # remove randomly choosen negative item from candidate list (if exists)   
+            negitem_uniform_id = 'i_' + str(negitem_uniform)
+            if negitem_uniform_id in filtered_list:
+                filtered_list.remove(negitem_uniform_id)
+    
+            selected_elements = random.sample(filtered_list, k=4)
+            selected_elements_int = [int(item.split('_')[1]) for item in selected_elements]
+
+            if any(negitem in posForUser for negitem in selected_elements_int):
+                continue
+            else:
+                break
+           
+
+        for selected_negitem in selected_elements_int:
+            S.append([user, positem, selected_negitem])
+
+        print(np.array(S))
+        print(a)
+        
+
+    return np.array(S)
+
+
+
 
 # ===================end samplers==========================
 # =====================utils====================================

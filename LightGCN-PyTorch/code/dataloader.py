@@ -29,6 +29,7 @@ import dgl
 import dgl.nn as dglnn
 from torch.optim import SparseAdam
 from sklearn.metrics.pairwise import cosine_similarity
+import random
 
 
 class BasicDataset(Dataset):
@@ -136,6 +137,9 @@ class LastFM(BasicDataset):
             neg = allItems - pos
             self.allNeg.append(np.array(list(neg)))
         self.__testDict = self.__build_test()
+
+        with open('/home/ece/Desktop/Negative_Sampling/LightGCN-PyTorch/data/lastfm/test_dict.pkl', 'wb') as f:
+            pickle.dump(self.__testDict, f)
         
         if config['neg_sample'] == 'alpha75':
             rows, cols = self.UserItemNet.nonzero()
@@ -390,7 +394,59 @@ class LastFM(BasicDataset):
                 min_indices = np.argsort(row)[1:11]
                 self.min_indices_dict[i] = min_indices
 
-    
+        if config['neg_sample'] == 'naive_random_walk':
+            rows, cols = self.UserItemNet.nonzero()
+            edges = np.column_stack((rows, cols))
+            df = pd.DataFrame(edges, columns=['user', 'item'])
+            
+            def convert_id_to_string(id_value, prefix):
+                return f'{prefix}_{id_value}'
+
+            # Convert user IDs
+            df['user'] = df['user'].apply(lambda x: convert_id_to_string(x, 'u'))
+
+            # Convert item IDs
+            df['item'] = df['item'].apply(lambda x: convert_id_to_string(x, 'i'))
+
+            #G_bipartite = nx.from_pandas_edgelist(df, 'user', 'item', create_using=nx.Graph)
+            
+            G = nx.from_pandas_edgelist(df, 'user', 'item')
+
+            self.path_length_dict = {}
+            self.path_length_prob_dict = {}
+
+            length_generator = nx.all_pairs_shortest_path_length(G)
+
+            num_pairs_user = nx.number_of_nodes(G) * (nx.number_of_nodes(G) - 1)
+            pbar = tqdm(total=num_pairs_user, desc="Converting generator to dictionary")
+
+            for source, lengths in length_generator:
+                self.path_length_dict[source] = {}
+                for target, length in lengths.items():
+                    self.path_length_dict[source][target] = length
+                
+                largest_value = max(self.path_length_dict[source].values())
+                nodes_in_dict = set(list(self.path_length_dict[source].keys()))
+                all_nodes = set(list(G.nodes()))
+
+                missing_nodes = list(nodes_in_dict - all_nodes)
+
+                if len(missing_nodes):
+                    print(missing_nodes)
+
+                for node in missing_nodes:
+                    self.path_length_dict[source][node] = largest_value + 1
+
+                
+                self.path_length_prob_dict[source] = [key for key, value in self.path_length_dict[source].items() for _ in range(value)]
+
+                pbar.update(len(lengths))
+            
+            pbar.close()
+
+
+
+   
     @property
     def n_users(self):
         return 1892

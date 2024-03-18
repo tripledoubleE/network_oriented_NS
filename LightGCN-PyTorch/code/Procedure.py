@@ -18,6 +18,7 @@ from tqdm import tqdm
 import model
 import multiprocessing
 from sklearn.metrics import roc_auc_score
+import pickle
 
 
 CORES = multiprocessing.cpu_count() // 2
@@ -121,7 +122,6 @@ def MCNS_train(dataset, recommend_model, loss_class, epoch, w=None):
     time_info = timer.dict()
     timer.zero()
     return f"loss{aver_loss:.3f}-{time_info}"
-
 
 def ItemProj_train_original(dataset, recommend_model, loss_class, epoch, neg_k=1, w=None):
     Recmodel = recommend_model
@@ -355,19 +355,74 @@ def MetaPath2Vec_train_original(dataset, recommend_model, loss_class, epoch, neg
     timer.zero()
     return f"loss{aver_loss:.3f}-{time_info}"
 
-def test_one_batch(X):
-    sorted_items = X[0].numpy()
-    groundTrue = X[1]
-    r = utils.getLabel(groundTrue, sorted_items)
-    pre, recall, ndcg = [], [], []
-    for k in world.topks:
-        ret = utils.RecallPrecision_ATk(groundTrue, r, k)
-        pre.append(ret['precision'])
-        recall.append(ret['recall'])
-        ndcg.append(utils.NDCGatK_r(groundTrue,r,k))
-    return {'recall':np.array(recall), 
-            'precision':np.array(pre), 
-            'ndcg':np.array(ndcg)}
+def NoSampling_train_original(dataset, recommend_model, loss_class, epoch, neg_k=1, w=None):
+    Recmodel = recommend_model
+    Recmodel.train()
+    bpr: utils.BPRLoss = loss_class
+    
+    with timer(name="Sample"):
+        S = utils.NoSampling_original(dataset)
+    users = torch.Tensor(S[:, 0]).long()
+    posItems = torch.Tensor(S[:, 1]).long()
+    negItems = torch.Tensor(S[:, 2]).long()
+
+    users = users.to(world.device)
+    posItems = posItems.to(world.device)
+    negItems = negItems.to(world.device)
+    users, posItems, negItems = utils.shuffle(users, posItems, negItems)
+    total_batch = len(users) // world.config['bpr_batch_size'] + 1
+    aver_loss = 0.
+    for (batch_i,
+         (batch_users,
+          batch_pos,
+          batch_neg)) in enumerate(utils.minibatch(users,
+                                                   posItems,
+                                                   negItems,
+                                                   batch_size=world.config['bpr_batch_size'])):
+        cri = bpr.stageOne(batch_users, batch_pos, batch_neg)
+        aver_loss += cri
+        if world.tensorboard:
+            w.add_scalar(f'BPRLoss/BPR', cri, epoch * int(len(users) / world.config['bpr_batch_size']) + batch_i)
+    aver_loss = aver_loss / total_batch
+    time_info = timer.dict()
+    timer.zero()
+    return f"loss{aver_loss:.3f}-{time_info}"
+
+def Naive_random_walk_train_original(dataset, recommend_model, loss_class, epoch, neg_k=1, w=None):
+    Recmodel = recommend_model
+    Recmodel.train()
+    bpr: utils.BPRLoss = loss_class
+    
+    with timer(name="Sample"):
+        S = utils.Naive_random_walk_original(dataset)
+    users = torch.Tensor(S[:, 0]).long()
+    posItems = torch.Tensor(S[:, 1]).long()
+    negItems = torch.Tensor(S[:, 2]).long()
+
+    users = users.to(world.device)
+    posItems = posItems.to(world.device)
+    negItems = negItems.to(world.device)
+    users, posItems, negItems = utils.shuffle(users, posItems, negItems)
+    total_batch = len(users) // world.config['bpr_batch_size'] + 1
+    aver_loss = 0.
+    for (batch_i,
+         (batch_users,
+          batch_pos,
+          batch_neg)) in enumerate(utils.minibatch(users,
+                                                   posItems,
+                                                   negItems,
+                                                   batch_size=world.config['bpr_batch_size'])):
+        cri = bpr.stageOne(batch_users, batch_pos, batch_neg)
+        aver_loss += cri
+        if world.tensorboard:
+            w.add_scalar(f'BPRLoss/BPR', cri, epoch * int(len(users) / world.config['bpr_batch_size']) + batch_i)
+    aver_loss = aver_loss / total_batch
+    time_info = timer.dict()
+    timer.zero()
+    return f"loss{aver_loss:.3f}-{time_info}"
+
+
+
 
 def test_one_batch(X):
     sorted_items = X[0].numpy()
@@ -409,6 +464,8 @@ def Test(dataset, Recmodel, epoch, w=None, multicore=0):
         # auc_record = []
         # ratings = []
         total_batch = len(users) // u_batch_size + 1
+        all_results = []
+
         for batch_users in utils.minibatch(users, batch_size=u_batch_size):
             allPos = dataset.getUserPosItems(batch_users)
             groundTrue = [testDict[u] for u in batch_users]
@@ -419,6 +476,7 @@ def Test(dataset, Recmodel, epoch, w=None, multicore=0):
             #rating = rating.cpu()
             exclude_index = []
             exclude_items = []
+
             for range_i, items in enumerate(allPos):
                 exclude_index.extend([range_i] * len(items))
                 exclude_items.extend(items)
@@ -431,10 +489,17 @@ def Test(dataset, Recmodel, epoch, w=None, multicore=0):
             #                   test_data) for i, test_data in enumerate(groundTrue)
             #     ]
             # auc_record.extend(aucs)
+            
+            all_results.append((batch_users, rating_K.cpu().numpy(), groundTrue))
+            
             del rating
             users_list.append(batch_users)
             rating_list.append(rating_K.cpu())
             groundTrue_list.append(groundTrue)
+
+        with open('/home/ece/Desktop/Negative_Sampling/LightGCN-PyTorch/prediction_results.pkl', 'wb') as f:
+            pickle.dump(all_results, f)
+            
         assert total_batch == len(users_list)
         X = zip(rating_list, groundTrue_list)
         if multicore == 1:

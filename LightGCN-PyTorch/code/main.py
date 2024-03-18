@@ -66,7 +66,12 @@ try:
             output_information = Procedure.Panther_train_original(dataset, Recmodel, bpr, epoch, neg_k=Neg_k,w=w)
         elif world.config['neg_sample'] == 'metapath2vec':
             output_information = Procedure.MetaPath2Vec_train_original(dataset, Recmodel, bpr, epoch, neg_k=Neg_k,w=w)
-        
+        elif world.config['neg_sample'] == 'no_sample': 
+            output_information = Procedure.NoSampling_train_original(dataset, Recmodel, bpr, epoch, neg_k=Neg_k,w=w)       
+        elif world.config['neg_sample'] == 'naive_random_walk': 
+            output_information = Procedure.Naive_random_walk_train_original(dataset, Recmodel, bpr, epoch, neg_k=Neg_k,w=w)
+
+
 
         print(f'EPOCH[{epoch+1}/{world.TRAIN_epochs}] {output_information}')
         torch.save(Recmodel.state_dict(), weight_file)
