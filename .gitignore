@@ -5,6 +5,8 @@ RecBole/recbole/dataset_example
 RecBole/recbole/__pycache__
 RecBole/saved
 LightGCN-PyTorch/code/runs
+LightGCN-PyTorch/data/lastfm/train_with_negs_1_100.pkl
+LightGCN-PyTorch/data/lastfm/train_with_negs_1_1.pkl
 *.png
 *.rst
 *.path
