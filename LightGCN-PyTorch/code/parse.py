@@ -29,7 +29,7 @@ def parse_args():
     parser.add_argument('--testbatch', type=int,default=100,
                         help="the batch size of users for testing")
     parser.add_argument('--dataset', type=str,default='gowalla',
-                        help="available datasets: [lastfm, gowalla, yelp2018, amazon-book]")
+                        help="available datasets: [lastfm, gowalla, yelp2018, amazon-book, amazon-toy, amazon-baby, amazon-beauty, amazon-home, movielens]")
     parser.add_argument('--path', type=str,default="./checkpoints",
                         help="path to save weights")
     parser.add_argument('--topks', nargs='?',default="[20]",
@@ -50,5 +50,15 @@ def parse_args():
     parser.add_argument("--warmup", type=float, default=100, help="weight for relevant factor")
     parser.add_argument("--gamma", type=float, default=0.3, help="weight for gating task")
     parser.add_argument("--pool", type=str, default='mean', help="[concat, mean, sum, final]")
+
+    # for negative sampling
+    parser.add_argument("--positem", type=int, default='1', help="number of pos item that model use")
+    parser.add_argument("--negitem", type=int, default='1', help="number of neg item that model use")
+    parser.add_argument("--commute_matrix_path", type=str, default='../data/lastfm/distance_tau1.csv', help="pre-calculated commute matrix path")
+    parser.add_argument("--neg_samp_strategy", type=str, default='furthest', help="neg sample strategy for commute distance sampling")
+    parser.add_argument("--add_randomness", type=int, default=1, help="add uniform sampling to selected negative sampling approach")
+
+    #neg_samp_strategy
+
 
     return parser.parse_args()

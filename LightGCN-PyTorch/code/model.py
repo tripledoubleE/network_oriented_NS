@@ -13,6 +13,8 @@ from dataloader import BasicDataset
 from torch import nn
 import numpy as np
 
+import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
 
 class BasicModel(nn.Module):    
     def __init__(self):
@@ -133,7 +135,6 @@ class LightGCN(BasicModel):
             self.pos_gate = nn.Linear(self.batch_size, self.batch_size).to(self.device)
             self.neg_gate = nn.Linear(self.batch_size, self.batch_size).to(self.device)        
         
-        # print("save_txt")
     def __dropout_x(self, x, keep_prob):
         size = x.size()
         index = x.indices().t()
@@ -161,6 +162,7 @@ class LightGCN(BasicModel):
         users_emb = self.embedding_user.weight
         items_emb = self.embedding_item.weight
         all_emb = torch.cat([users_emb, items_emb])
+        ego_embeddings = torch.cat([users_emb, items_emb]) ### FOR NEW APPROACH
         #   torch.split(all_emb , [self.num_users, self.num_items])
         embs = [all_emb]
         if self.config['dropout']:
@@ -181,6 +183,9 @@ class LightGCN(BasicModel):
                 all_emb = side_emb
             else:
                 all_emb = torch.sparse.mm(g_droped, all_emb)
+                #### NEW APPROACH TRIAL ###
+                all_emb = torch.mul(ego_embeddings, all_emb)
+
             embs.append(all_emb)
         embs = torch.stack(embs, dim=1)
         #print(embs.size())
@@ -188,14 +193,14 @@ class LightGCN(BasicModel):
         users, items = torch.split(light_out, [self.num_users, self.num_items])
         return users, items
     
-    def getUsersRating(self, users):
+    def getUsersRating(self, users): # yeni method gelirse burasi degisecek !
         all_users, all_items = self.computer()
         users_emb = all_users[users.long()]
         items_emb = all_items
         rating = self.f(torch.matmul(users_emb, items_emb.t()))
         return rating
     
-    def getEmbedding(self, users, pos_items, neg_items):
+    def getEmbedding(self, users, pos_items, neg_items): 
         all_users, all_items = self.computer()
         users_emb = all_users[users]
         pos_emb = all_items[pos_items]
@@ -223,13 +228,14 @@ class LightGCN(BasicModel):
     def forward(self, users, items):
         # compute embedding
         all_users, all_items = self.computer()
-        # print('forward')
-        #all_users, all_items = self.computer()
         users_emb = all_users[users]
         items_emb = all_items[items]
         inner_pro = torch.mul(users_emb, items_emb)
         gamma     = torch.sum(inner_pro, dim=1)
         return gamma
+    
+    
+    
     
     def get_p_probs(self, users, items):
         all_users, all_items = self.computer()

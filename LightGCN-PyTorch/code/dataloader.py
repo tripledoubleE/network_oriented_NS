@@ -9,6 +9,8 @@ Every dataset's index has to start at 0
 """
 import os
 from tqdm import tqdm
+from concurrent.futures import ProcessPoolExecutor
+from itertools import product
 from os.path import join
 import sys
 import torch
@@ -20,16 +22,87 @@ import scipy.sparse as sp
 import world
 from world import cprint
 from time import time
+from itertools import chain
 
 from collections import defaultdict
 import networkx as nx
 import pickle
 
-import dgl
-import dgl.nn as dglnn
+#import dgl
+#import dgl.nn as dglnn
 from torch.optim import SparseAdam
 from sklearn.metrics.pairwise import cosine_similarity
 import random
+from collections import deque
+
+def create_all_simple_path_dict_modified(G):
+    all_simple_path_dict = {}
+    all_simple_path_len = {}
+    user_nodes = {node for node in G.nodes() if node.startswith('u_')}
+    item_nodes = {node for node in G.nodes() if node.startswith('i_')}
+    
+    path_cache = {}  # Cache for storing calculated paths
+    
+    for source in tqdm(user_nodes, desc='Source nodes'):
+        paths_from_source = {}
+        print('a')
+        for target in tqdm(item_nodes, desc='Target nodes', leave=False):
+            print('b')
+            # Check if paths have already been calculated for this pair of nodes
+            if (source, target) in path_cache:
+                paths = path_cache[(source, target)]
+            else:
+                # Calculate paths and store them in the cache
+                paths = list(nx.all_simple_paths(G, source, target))
+                print('c')
+                path_cache[(source, target)] = paths
+            
+            if paths:
+                if any(len(path) == 2 for path in paths):
+                    all_simple_path_len.setdefault(source, {}).setdefault(target, 1)
+                else:
+                    shortest_path = max(paths, key=len)
+                    paths_from_source[target] = [shortest_path]
+                    all_simple_path_len.setdefault(source, {}).setdefault(target, len(shortest_path) - 1)
+            else:
+                paths_from_source[target] = []
+                all_simple_path_len.setdefault(source, {}).setdefault(target, 0)
+        all_simple_path_dict[source] = paths_from_source
+    
+    return all_simple_path_dict, all_simple_path_len
+
+
+def estimate_paths(graph, source, target, num_walks, max_walk_length):
+    num_paths = 0
+    for _ in range(num_walks):
+        current_node = source
+        for _ in range(max_walk_length):
+            if current_node == target:
+                num_paths += 1
+                break
+            neighbors = list(graph.neighbors(current_node))
+            if not neighbors:
+                break
+            current_node = random.choice(neighbors)
+    return num_paths
+
+def estimate_paths_with_length(graph, source, target, num_walks, max_walk_length):
+    min_length = float('inf')
+    max_length = float('-inf')
+    for _ in range(num_walks):
+        current_node = source
+        length = 0
+        for _ in range(max_walk_length):
+            if current_node == target:
+                min_length = min(min_length, length)
+                max_length = max(max_length, length)
+                break
+            neighbors = list(graph.neighbors(current_node))
+            if not neighbors:
+                break
+            current_node = random.choice(neighbors)
+            length += 1
+    return min_length, max_length
 
 
 class BasicDataset(Dataset):
@@ -138,9 +211,645 @@ class LastFM(BasicDataset):
             self.allNeg.append(np.array(list(neg)))
         self.__testDict = self.__build_test()
 
-        with open('/home/ece/Desktop/Negative_Sampling/LightGCN-PyTorch/data/lastfm/test_dict.pkl', 'wb') as f:
-            pickle.dump(self.__testDict, f)
         
+        if config['neg_sample'] == 'alpha75':
+            rows, cols = self.UserItemNet.nonzero()
+            edges = np.column_stack((rows, cols))
+            df = pd.DataFrame(edges, columns=['user', 'item'])
+
+            def convert_id_to_string(id_value, prefix):
+                return f'{prefix}_{id_value}'
+
+            # Convert user IDs
+            df['user'] = df['user'].apply(lambda x: convert_id_to_string(x, 'u'))
+
+            # Convert item IDs
+            df['item'] = df['item'].apply(lambda x: convert_id_to_string(x, 'i'))
+
+            #G_bipartite = nx.from_pandas_edgelist(df, 'user', 'item', create_using=nx.Graph)
+
+            self.G_bipartite=nx.Graph()
+            self.G_bipartite.add_nodes_from(df['user'],bipartite=0)
+            self.G_bipartite.add_nodes_from(df['item'],bipartite=1)
+            self.G_bipartite.add_edges_from([(row.user, row.item) for row in df.itertuples(index=False)])
+
+            nodes = list(self.G_bipartite.nodes())
+            mapping = {node: int(node.split('_')[1]) for node in nodes}
+            self.G_bipartite = nx.relabel_nodes(self.G_bipartite, mapping)
+
+        if config['neg_sample'] == 'item_proj':
+            rows, cols = self.UserItemNet.nonzero()
+            edges = np.column_stack((rows, cols))
+            df = pd.DataFrame(edges, columns=['user', 'item'])
+            
+            def convert_id_to_string(id_value, prefix):
+                return f'{prefix}_{id_value}'
+
+            # Convert user IDs
+            df['user'] = df['user'].apply(lambda x: convert_id_to_string(x, 'u'))
+
+            # Convert item IDs
+            df['item'] = df['item'].apply(lambda x: convert_id_to_string(x, 'i'))
+
+            #G_bipartite = nx.from_pandas_edgelist(df, 'user', 'item', create_using=nx.Graph)
+            
+            G_bipartite=nx.Graph()
+            G_bipartite.add_nodes_from(list(set(df['user'])),bipartite=0)
+            G_bipartite.add_nodes_from(list(set(df['item'])),bipartite=1)
+            G_bipartite.add_edges_from([(row.user, row.item) for row in df.itertuples(index=False)])
+            
+
+            self.G_item_projected = nx.bipartite.projected_graph(G_bipartite, nodes=df['item'].unique())
+
+            num_pairs_user = nx.number_of_nodes(self.G_item_projected) * (nx.number_of_nodes(self.G_item_projected) - 1)
+
+
+            nodes = list(self.G_item_projected.nodes())
+            mapping = {node: int(node.split('_')[1]) for node in nodes}
+            self.G_item_projected = nx.relabel_nodes(self.G_item_projected, mapping)
+    
+            # Initialize a progress bar
+            pbar = tqdm(total=num_pairs_user, desc="Converting generator to dictionary")
+
+            # Initialize an empty dictionary
+            self.path_length_dict_item = {}
+            self.remap_dict = {}
+            count = 0
+            # Convert the generator to a dictionary
+            length_generator_item = nx.all_pairs_shortest_path_length(self.G_item_projected)
+
+            for source, distances in length_generator_item:
+                self.remap_dict[source] = count
+                self.path_length_dict_item[source] = dict(distances)
+                count += 1
+                pbar.update(len(distances))
+            pbar.close()
+
+        # for user projected 
+        if config['neg_sample'] == 'user_proj':
+
+            rows, cols = self.UserItemNet.nonzero()
+            edges = np.column_stack((rows, cols))
+            df = pd.DataFrame(edges, columns=['user', 'item'])
+           
+            def convert_id_to_string(id_value, prefix):
+                return f'{prefix}_{id_value}'
+
+            # Convert user IDs
+            df['user'] = df['user'].apply(lambda x: convert_id_to_string(x, 'u'))
+
+            # Convert item IDs
+            df['item'] = df['item'].apply(lambda x: convert_id_to_string(x, 'i'))
+            
+            G_bipartite=nx.Graph()
+            G_bipartite.add_nodes_from(df['user'],bipartite=0)
+            G_bipartite.add_nodes_from(df['item'],bipartite=1)
+            G_bipartite.add_edges_from([(row.user, row.item) for row in df.itertuples(index=False)])
+            
+            #is_bipartite = nx.is_bipartite(G_bipartite)
+
+            self.G_user_projected = nx.bipartite.projected_graph(G_bipartite, nodes=df['user'].unique())
+
+            num_pairs_user = nx.number_of_nodes(self.G_user_projected) * (nx.number_of_nodes(self.G_user_projected) - 1)
+
+            nodes = list(self.G_user_projected.nodes())
+            mapping = {node: int(node.split('_')[1]) for node in nodes}
+            self.G_user_projected = nx.relabel_nodes(self.G_user_projected, mapping)
+
+            # Initialize a progress bar
+            pbar = tqdm(total=num_pairs_user, desc="Converting generator to dictionary")
+
+            # Initialize an empty dictionary
+            self.path_length_dict_user = {}
+            self.remap_dict = {}
+            count = 0
+            # Convert the generator to a dictionary
+            length_generator_user = nx.all_pairs_shortest_path_length(self.G_user_projected)
+
+            for source, distances in length_generator_user:
+                self.remap_dict[source] = count
+                self.path_length_dict_user[source] = dict(distances)
+                count += 1
+                pbar.update(len(distances))
+
+
+            pbar.close()
+        
+            #with open('/home/ece/Desktop/Negative_Sampling/LightGCN-PyTorch/ABC_user_my_dict.pkl', 'wb') as file:
+            #    pickle.dump(self.path_length_dict_user, file)
+
+        if config['neg_sample'] == 'item_proj_SimRank':
+            rows, cols = self.UserItemNet.nonzero()
+            edges = np.column_stack((rows, cols))
+            df = pd.DataFrame(edges, columns=['user', 'item'])
+            
+            def convert_id_to_string(id_value, prefix):
+                return f'{prefix}_{id_value}'
+
+            # Convert user IDs
+            df['user'] = df['user'].apply(lambda x: convert_id_to_string(x, 'u'))
+
+            # Convert item IDs
+            df['item'] = df['item'].apply(lambda x: convert_id_to_string(x, 'i'))
+
+            #G_bipartite = nx.from_pandas_edgelist(df, 'user', 'item', create_using=nx.Graph)
+            
+            G_bipartite=nx.Graph()
+            G_bipartite.add_nodes_from(list(set(df['user'])),bipartite=0)
+            G_bipartite.add_nodes_from(list(set(df['item'])),bipartite=1)
+            G_bipartite.add_edges_from([(row.user, row.item) for row in df.itertuples(index=False)])
+            
+
+            self.G_item_projected = nx.bipartite.projected_graph(G_bipartite, nodes=df['item'].unique())  
+
+            nodes = list(self.G_item_projected.nodes())
+            mapping = {node: int(node.split('_')[1]) for node in nodes}
+            self.G_item_projected = nx.relabel_nodes(self.G_item_projected, mapping)
+
+            self.simRank_dict = nx.simrank_similarity(self.G_item_projected)
+
+        if config['neg_sample'] == 'item_proj_Panther':
+            rows, cols = self.UserItemNet.nonzero()
+            edges = np.column_stack((rows, cols))
+            df = pd.DataFrame(edges, columns=['user', 'item'])
+            
+            def convert_id_to_string(id_value, prefix):
+                return f'{prefix}_{id_value}'
+
+            # Convert user IDs
+            df['user'] = df['user'].apply(lambda x: convert_id_to_string(x, 'u'))
+
+            # Convert item IDs
+            df['item'] = df['item'].apply(lambda x: convert_id_to_string(x, 'i'))
+
+            #G_bipartite = nx.from_pandas_edgelist(df, 'user', 'item', create_using=nx.Graph)
+            
+            G_bipartite=nx.Graph()
+            G_bipartite.add_nodes_from(list(set(df['user'])),bipartite=0)
+            G_bipartite.add_nodes_from(list(set(df['item'])),bipartite=1)
+            G_bipartite.add_edges_from([(row.user, row.item) for row in df.itertuples(index=False)])
+            
+
+            self.G_item_projected = nx.bipartite.projected_graph(G_bipartite, nodes=df['item'].unique())  
+
+            nodes = list(self.G_item_projected.nodes())
+            mapping = {node: int(node.split('_')[1]) for node in nodes}
+            self.G_item_projected = nx.relabel_nodes(self.G_item_projected, mapping)
+
+            self.panther_sim_dict = {}
+            num_pairs = nx.number_of_nodes(self.G_item_projected) * (nx.number_of_nodes(self.G_item_projected) - 1)
+
+            pbar = tqdm(total=num_pairs, desc="Calculating Panther similarity")
+
+            for node in list(mapping.values()):
+                panther_sim = nx.panther_similarity(self.G_item_projected, node, k=nx.number_of_nodes(self.G_item_projected) - 1)
+                self.panther_sim_dict[node] = panther_sim
+                pbar.update(1)
+            
+            pbar.close()
+
+        if config['neg_sample'] == 'metapath2vec':
+
+            """
+            Trains a MetaPath2Vec model on the user-item interaction data and returns user and item embeddings.
+
+            Args:
+                UserItemNet: A scipy sparse matrix representing user-item interactions.
+
+            Returns:
+                A tuple containing two dictionaries:
+                    - user_embeddings: Dictionary mapping real user IDs to their corresponding embeddings.
+                    - item_embeddings: Dictionary mapping real item IDs to their corresponding embeddings.
+            """
+
+            # Node ID mapping
+            id_mapping = {}
+
+            g = dgl.bipartite_from_scipy(self.UserItemNet, utype='_U', etype='_user_item_edge', vtype='_I')
+            
+            print(g)
+
+            # Define metapath for user-item interactions
+            metapath = ['_user_item_edge']
+
+            # Create the MetaPath2Vec model
+            model = dglnn.MetaPath2Vec(g, metapath, emb_dim=128, window_size=1, negative_size=5, sparse=True)
+
+            # Define data loader for efficient batch training
+            dataloader = DataLoader(torch.arange(g.num_nodes('_U')), batch_size=128, shuffle=True, collate_fn=model.sample)
+
+            # Define optimizer (adjust parameters as needed)
+            optimizer = SparseAdam(model.parameters(), lr=0.025)
+
+            # Train the model
+            for epoch in range(100):  # Adjust number of epochs based on dataset size and complexity
+                for (pos_u, pos_v, neg_v) in dataloader:
+                    loss = model(pos_u, pos_v, neg_v)
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+
+            # Retrieve learned embeddings
+            user_nids = torch.LongTensor(model.local_to_global_nid['_U'])
+            user_emb = model.node_embed(user_nids).detach().cpu().numpy()
+
+            item_nids = torch.LongTensor(model.local_to_global_nid['_I'])
+            item_emb = model.node_embed(item_nids).detach().cpu().numpy()
+
+            similarity_matrix = cosine_similarity(item_emb)
+
+            self.min_indices = np.argmin(similarity_matrix, axis=1)
+            self.min_indices_dict = {}
+            for i, row in enumerate(similarity_matrix):
+                # Get indices of the 5 smallest cosine values excluding the diagonal (self-similarity)
+                min_indices = np.argsort(row)[1:11]
+                self.min_indices_dict[i] = min_indices
+
+        if config['neg_sample'] == 'naive_random_walk':
+            self.nbr_pos_item = config['positem']
+            self.nbr_neg_item = config['negitem']
+            self.neg_samp_strategy = config['neg_samp_strategy']
+
+            self.add_randomness = config['add_randomness']
+
+            rows, cols = self.UserItemNet.nonzero()
+            edges = np.column_stack((rows, cols))
+            df = pd.DataFrame(edges, columns=['user', 'item'])
+            
+            def convert_id_to_string(id_value, prefix):
+                return f'{prefix}_{id_value}'
+
+            # Convert user IDs
+            df['user'] = df['user'].apply(lambda x: convert_id_to_string(x, 'u'))
+
+            # Convert item IDs
+            df['item'] = df['item'].apply(lambda x: convert_id_to_string(x, 'i'))
+
+            #G_bipartite = nx.from_pandas_edgelist(df, 'user', 'item', create_using=nx.Graph)
+            #df.to_csv('/home/ece/Desktop/Negative_Sampling/LightGCN-PyTorch/data/lastfm/graph_edge_list.csv', index=False) 
+            
+            G = nx.from_pandas_edgelist(df, 'user', 'item')
+
+            self.path_length_dict = {}
+            self.path_length_prob_dict = {}
+
+            length_generator = nx.all_pairs_shortest_path_length(G)
+
+            num_pairs_user = nx.number_of_nodes(G) * (nx.number_of_nodes(G) - 1)
+            pbar = tqdm(total=num_pairs_user, desc="Converting generator to dictionary")
+
+            for source, lengths in length_generator:
+                self.path_length_dict[source] = {}
+                for target, length in lengths.items():
+                    self.path_length_dict[source][target] = length
+                
+                # largest_value = max(self.path_length_dict[source].values())
+                # nodes_in_dict = set(list(self.path_length_dict[source].keys()))
+                # all_nodes = set(list(G.nodes()))
+
+                # missing_nodes = list(all_nodes - nodes_in_dict)
+
+                # if len(missing_nodes):
+                #     print(missing_nodes)
+
+                # for node in missing_nodes:
+                #     self.path_length_dict[source][node] = largest_value + 1
+
+                
+                self.path_length_prob_dict[source] = [key for key, value in self.path_length_dict[source].items() for _ in range(value)]
+                #itemlar path uzunlugu kadar coklanir 
+
+                pbar.update(len(lengths))
+            
+            pbar.close()
+
+        if config['neg_sample'] == 'commute_distance' or config['neg_sample'] == 'pure_commute_distance' :
+
+            self.nbr_pos_item = 0
+            self.nbr_neg_item = 0
+
+            self.nbr_pos_item = config['positem']
+            self.nbr_neg_item = config['negitem']
+            self.neg_samp_strategy = config['neg_samp_strategy']
+
+            commute_matrix_path = config['commute_matrix_path']
+            self.add_randomness = config['add_randomness']
+
+            #/home/ece/Desktop/Negative_Sampling/LightGCN-PyTorch/data/lastfm/distance_tau1.csv
+
+            df = pd.read_csv(commute_matrix_path)
+
+            df = df.set_index('Unnamed: 0')
+
+            # Create dictionary with progress bar
+            self.distance_dict = {}
+            for row_index, row in tqdm(df.iterrows(), total=len(df)):
+                self.distance_dict[row_index] = {key: value for key, value in row.items() if not key.startswith('u_')}
+
+            # for row_index, row in tqdm(df.iterrows(), total=len(df)):
+                
+            #     self.distance_dict[row_index] = {}
+            #     for col_index, value in row.items():
+            #         self.distance_dict[row_index][col_index] = value
+
+
+        if config['neg_sample'] == 'all_simple_paths':
+
+            self.nbr_pos_item = config['positem']
+            self.nbr_neg_item = config['negitem']
+            self.neg_samp_strategy = config['neg_samp_strategy']
+
+            self.add_randomness = config['add_randomness']
+
+            rows, cols = self.UserItemNet.nonzero()
+            edges = np.column_stack((rows, cols))
+            df = pd.DataFrame(edges, columns=['user', 'item'])
+            
+            def convert_id_to_string(id_value, prefix):
+                return f'{prefix}_{id_value}'
+
+            # Convert user IDs
+            df['user'] = df['user'].apply(lambda x: convert_id_to_string(x, 'u'))
+
+            # Convert item IDs
+            df['item'] = df['item'].apply(lambda x: convert_id_to_string(x, 'i'))
+
+            #G_bipartite = nx.from_pandas_edgelist(df, 'user', 'item', create_using=nx.Graph)
+            #df.to_csv('/home/ece/Desktop/Negative_Sampling/LightGCN-PyTorch/data/lastfm/graph_edge_list.csv', index=False) 
+            
+            G = nx.from_pandas_edgelist(df, 'user', 'item')
+
+            num_walks = 100
+            max_walk_length = 10
+
+            u_nodes =[node for node in G.nodes() if node.startswith('u_')] 
+            i_nodes =[node for node in G.nodes() if node.startswith('i_')] 
+
+            if self.neg_samp_strategy == 'num_path':
+
+                self.estimated_num_paths_dict = {}
+
+                for user in tqdm(u_nodes, desc='Processing users'):
+                    self.estimated_num_paths_dict[user] = []
+                    source = user
+                    for item in i_nodes:
+                        target = item
+                        estimated_num_paths = estimate_paths(G, source, target, num_walks, max_walk_length)
+                        self.estimated_num_paths_dict[user].extend([item] * estimated_num_paths)
+
+            elif self.neg_samp_strategy == 'max_path':
+                self.estimated_max_path_dict = {}
+
+                for user in tqdm(u_nodes, desc='Processing users'):
+                    self.estimated_max_path_dict[user] = []
+                    source = user
+                    for item in i_nodes:
+                        target = item
+                        _, estimated_max_path = estimate_paths_with_length(G, source, target, num_walks, max_walk_length)
+                        if estimated_max_path == float('-inf'):
+                            estimated_max_path = 0
+                        self.estimated_max_path_dict[user].extend([item] * estimated_max_path)
+            
+
+            elif self.neg_samp_strategy == 'min_path': ### min path zaten 1. dereceden komsusu olacak? 
+
+                self.estimated_min_path_dict = {}
+
+                for user in tqdm(u_nodes, desc='Processing users'):
+                    self.estimated_min_path_dict[user] = []
+                    source = user
+                    for item in i_nodes:
+                        target = item
+                        estimated_min_path, _= estimate_paths_with_length(G, source, target, num_walks, max_walk_length)
+                        #if estimated_max_path == float('inf'):
+
+                        self.estimated_min_path_dict[user].extend([item] * estimated_min_path)
+            
+                #self.estimated_num_paths_dict[user] = list(chain.from_iterable(self.estimated_num_paths_dict[user]))
+
+
+
+    @property
+    def n_users(self):
+        return 1892
+    
+    @property
+    def m_items(self):
+        return 4489
+    
+    @property
+    def trainDataSize(self):
+        return len(self.trainUser)
+    
+    @property
+    def testDict(self):
+        return self.__testDict
+
+    @property
+    def allPos(self):
+        return self._allPos
+
+    def getSparseGraph(self):
+        if self.Graph is None:
+            user_dim = torch.LongTensor(self.trainUser)
+            item_dim = torch.LongTensor(self.trainItem)
+            
+            first_sub = torch.stack([user_dim, item_dim + self.n_users])
+            second_sub = torch.stack([item_dim+self.n_users, user_dim])
+            index = torch.cat([first_sub, second_sub], dim=1)
+            data = torch.ones(index.size(-1)).int()
+            self.Graph = torch.sparse.IntTensor(index, data, torch.Size([self.n_users+self.m_items, self.n_users+self.m_items]))
+            dense = self.Graph.to_dense()
+            D = torch.sum(dense, dim=1).float()
+            D[D==0.] = 1.
+            D_sqrt = torch.sqrt(D).unsqueeze(dim=0)
+            dense = dense/D_sqrt
+            dense = dense/D_sqrt.t()
+            index = dense.nonzero()
+            data  = dense[dense >= 1e-9]
+            assert len(index) == len(data)
+            self.Graph = torch.sparse.FloatTensor(index.t(), data, torch.Size([self.n_users+self.m_items, self.n_users+self.m_items]))
+            self.Graph = self.Graph.coalesce().to(world.device)
+        return self.Graph
+
+    def __build_test(self):
+        """
+        return:
+            dict: {user: [items]}
+        """
+        test_data = {}
+        for i, item in enumerate(self.testItem):
+            user = self.testUser[i]
+            if test_data.get(user):
+                test_data[user].append(item)
+            else:
+                test_data[user] = [item]
+        return test_data
+    
+    def getUserItemFeedback(self, users, items):
+        """
+        users:
+            shape [-1]
+        items:
+            shape [-1]
+        return:
+            feedback [-1]
+        """
+        # print(self.UserItemNet[users, items])
+        return np.array(self.UserItemNet[users, items]).astype('uint8').reshape((-1, ))
+    
+    def getUserPosItems(self, users):
+        posItems = []
+        for user in users:
+            posItems.append(self.UserItemNet[user].nonzero()[1])
+        return posItems
+    
+    def getUserNegItems(self, users):
+        negItems = []
+        for user in users:
+            negItems.append(self.allNeg[user])
+        return negItems
+    
+    def create_item_projected_graph(self):
+        csr_usr_item_graph = self.UserItemNet
+
+        rows, cols = csr_usr_item_graph.nonzero()
+        edges = np.column_stack((rows, cols))
+        df = pd.DataFrame(edges, columns=['user', 'item'])
+        G_bipartite = nx.from_pandas_edgelist(df, 'user', 'item')
+
+        G_item_projected = nx.bipartite.projected_graph(G_bipartite, nodes=df['item'].unique())
+        # Graph with 9177 nodes and 3892067 edges
+
+        return G_item_projected
+
+    def get_distance_matrix(self, nx_graph):
+        
+        # print("a")
+        # length_generator = nx.all_pairs_shortest_path_length(nx_graph)
+        # print("b")
+        # length_dict = dict(length_generator)
+
+        # print(length_dict)
+        
+        # Calculate the number of pairs of nodes
+        num_pairs = nx.number_of_nodes(nx_graph) * (nx.number_of_nodes(nx_graph) - 1)
+
+        # Initialize a progress bar
+        pbar = tqdm(total=num_pairs, desc="Converting generator to dictionary")
+
+        # Initialize an empty dictionary
+        length_dict = {}
+
+        # Convert the generator to a dictionary
+        length_generator = nx.all_pairs_shortest_path_length(nx_graph)
+        for source, distances in length_generator:
+            length_dict[source] = dict(distances)
+            pbar.update(len(distances))
+
+        pbar.close()
+
+        return length_dict               
+    
+    
+    def __getitem__(self, index):
+        user = self.trainUniqueUsers[index]
+        # return user_id and the positive items of the user
+        return user
+    
+    def switch2test(self):
+        """
+        change dataset mode to offer test data to dataloader
+        """
+        self.mode = self.mode_dict['test']
+    
+    def __len__(self):
+        return len(self.trainUniqueUsers)
+
+class Loader(BasicDataset):
+    """
+    Dataset type for pytorch \n
+    Incldue graph information
+    gowalla dataset
+    """
+
+
+    def __init__(self,config = world.config, path="../data/"+world.dataset):
+        # train or test
+
+        cprint(f'loading [{path}]')
+        self.split = config['A_split']
+        self.folds = config['A_n_fold']
+        self.mode_dict = {'train': 0, "test": 1}
+        self.mode = self.mode_dict['train']
+        self.n_user = 0
+        self.m_item = 0
+        train_file = path + '/train.txt'
+        test_file = path + '/test.txt'
+        self.path = path
+        trainUniqueUsers, trainItem, trainUser = [], [], []
+        testUniqueUsers, testItem, testUser = [], [], []
+        self.traindataSize = 0
+        self.testDataSize = 0
+
+        with open(train_file) as f:
+            for l in f.readlines():
+                if len(l) > 0:
+                    l = l.strip('\n').split(' ')
+                    items = [int(i) for i in l[1:]]
+                    uid = int(l[0])
+                    trainUniqueUsers.append(uid)
+                    trainUser.extend([uid] * len(items))
+                    trainItem.extend(items)
+                    self.m_item = max(self.m_item, max(items))
+                    self.n_user = max(self.n_user, uid)
+                    self.traindataSize += len(items)
+        self.trainUniqueUsers = np.array(trainUniqueUsers)
+        self.trainUser = np.array(trainUser)
+        self.trainItem = np.array(trainItem)
+
+        with open(test_file) as f:
+            for l in f.readlines():
+                if len(l) > 0:
+                    l = l.strip('\n').split(' ')
+                    items = [int(i) for i in l[1:]]
+                    uid = int(l[0])
+                    testUniqueUsers.append(uid)
+                    testUser.extend([uid] * len(items))
+                    testItem.extend(items)
+                    self.m_item = max(self.m_item, max(items))
+                    self.n_user = max(self.n_user, uid)
+                    self.testDataSize += len(items)
+        self.m_item += 1
+        self.n_user += 1
+        self.testUniqueUsers = np.array(testUniqueUsers)
+        self.testUser = np.array(testUser)
+        self.testItem = np.array(testItem)
+        
+        self.Graph = None
+        print(f"{self.trainDataSize} interactions for training")
+        print(f"{self.testDataSize} interactions for testing")
+        print(f"{world.dataset} Sparsity : {(self.trainDataSize + self.testDataSize) / self.n_users / self.m_items}")
+
+        # (users,items), bipartite graph
+        self.UserItemNet = csr_matrix((np.ones(len(self.trainUser)), (self.trainUser, self.trainItem)),
+                                      shape=(self.n_user, self.m_item))
+        self.users_D = np.array(self.UserItemNet.sum(axis=1)).squeeze()
+        self.users_D[self.users_D == 0.] = 1
+        self.items_D = np.array(self.UserItemNet.sum(axis=0)).squeeze()
+        self.items_D[self.items_D == 0.] = 1.
+        # pre-calculate
+        self._allPos = self.getUserPosItems(list(range(self.n_user)))
+
+        self.allNeg = []
+        allItems    = set(range(self.m_items))
+        for i in range(self.n_users):
+            pos = set(self._allPos[i])
+            neg = allItems - pos
+            self.allNeg.append(np.array(list(neg)))
+        
+        self.__testDict = self.__build_test()
+
         if config['neg_sample'] == 'alpha75':
             rows, cols = self.UserItemNet.nonzero()
             edges = np.column_stack((rows, cols))
@@ -409,6 +1118,8 @@ class LastFM(BasicDataset):
             df['item'] = df['item'].apply(lambda x: convert_id_to_string(x, 'i'))
 
             #G_bipartite = nx.from_pandas_edgelist(df, 'user', 'item', create_using=nx.Graph)
+
+            #df.to_csv('/home/ece/Desktop/Negative_Sampling/LightGCN-PyTorch/data/lastfm/graph_edge_list.csv', index=False) 
             
             G = nx.from_pandas_edgelist(df, 'user', 'item')
 
@@ -425,19 +1136,16 @@ class LastFM(BasicDataset):
                 for target, length in lengths.items():
                     self.path_length_dict[source][target] = length
                 
-                largest_value = max(self.path_length_dict[source].values())
-                nodes_in_dict = set(list(self.path_length_dict[source].keys()))
-                all_nodes = set(list(G.nodes()))
+                largest_value = max(self.path_length_dict[source].values()) # o user in dictindeki en uzak item 
+                nodes_in_dict = set(list(self.path_length_dict[source].keys())) # o user in butun itemlari (interact ettigi)
 
-                missing_nodes = list(nodes_in_dict - all_nodes)
-
-                if len(missing_nodes):
-                    print(missing_nodes)
+                all_nodes = set(list(G.nodes))
+                
+                missing_nodes = (all_nodes - nodes_in_dict)
 
                 for node in missing_nodes:
                     self.path_length_dict[source][node] = largest_value + 1
-
-                
+            
                 self.path_length_prob_dict[source] = [key for key, value in self.path_length_dict[source].items() for _ in range(value)]
 
                 pbar.update(len(lengths))
@@ -445,219 +1153,8 @@ class LastFM(BasicDataset):
             pbar.close()
 
 
-
-   
-    @property
-    def n_users(self):
-        return 1892
-    
-    @property
-    def m_items(self):
-        return 4489
-    
-    @property
-    def trainDataSize(self):
-        return len(self.trainUser)
-    
-    @property
-    def testDict(self):
-        return self.__testDict
-
-    @property
-    def allPos(self):
-        return self._allPos
-
-    def getSparseGraph(self):
-        if self.Graph is None:
-            user_dim = torch.LongTensor(self.trainUser)
-            item_dim = torch.LongTensor(self.trainItem)
-            
-            first_sub = torch.stack([user_dim, item_dim + self.n_users])
-            second_sub = torch.stack([item_dim+self.n_users, user_dim])
-            index = torch.cat([first_sub, second_sub], dim=1)
-            data = torch.ones(index.size(-1)).int()
-            self.Graph = torch.sparse.IntTensor(index, data, torch.Size([self.n_users+self.m_items, self.n_users+self.m_items]))
-            dense = self.Graph.to_dense()
-            D = torch.sum(dense, dim=1).float()
-            D[D==0.] = 1.
-            D_sqrt = torch.sqrt(D).unsqueeze(dim=0)
-            dense = dense/D_sqrt
-            dense = dense/D_sqrt.t()
-            index = dense.nonzero()
-            data  = dense[dense >= 1e-9]
-            assert len(index) == len(data)
-            self.Graph = torch.sparse.FloatTensor(index.t(), data, torch.Size([self.n_users+self.m_items, self.n_users+self.m_items]))
-            self.Graph = self.Graph.coalesce().to(world.device)
-        return self.Graph
-
-    def __build_test(self):
-        """
-        return:
-            dict: {user: [items]}
-        """
-        test_data = {}
-        for i, item in enumerate(self.testItem):
-            user = self.testUser[i]
-            if test_data.get(user):
-                test_data[user].append(item)
-            else:
-                test_data[user] = [item]
-        return test_data
-    
-    def getUserItemFeedback(self, users, items):
-        """
-        users:
-            shape [-1]
-        items:
-            shape [-1]
-        return:
-            feedback [-1]
-        """
-        # print(self.UserItemNet[users, items])
-        return np.array(self.UserItemNet[users, items]).astype('uint8').reshape((-1, ))
-    
-    def getUserPosItems(self, users):
-        posItems = []
-        for user in users:
-            posItems.append(self.UserItemNet[user].nonzero()[1])
-        return posItems
-    
-    def getUserNegItems(self, users):
-        negItems = []
-        for user in users:
-            negItems.append(self.allNeg[user])
-        return negItems
-    
-    def create_item_projected_graph(self):
-        csr_usr_item_graph = self.UserItemNet
-
-        rows, cols = csr_usr_item_graph.nonzero()
-        edges = np.column_stack((rows, cols))
-        df = pd.DataFrame(edges, columns=['user', 'item'])
-        G_bipartite = nx.from_pandas_edgelist(df, 'user', 'item')
-
-        G_item_projected = nx.bipartite.projected_graph(G_bipartite, nodes=df['item'].unique())
-        # Graph with 9177 nodes and 3892067 edges
-
-        return G_item_projected
-
-    def get_distance_matrix(self, nx_graph):
-        
-        # print("a")
-        # length_generator = nx.all_pairs_shortest_path_length(nx_graph)
-        # print("b")
-        # length_dict = dict(length_generator)
-
-        # print(length_dict)
-        
-        # Calculate the number of pairs of nodes
-        num_pairs = nx.number_of_nodes(nx_graph) * (nx.number_of_nodes(nx_graph) - 1)
-
-        # Initialize a progress bar
-        pbar = tqdm(total=num_pairs, desc="Converting generator to dictionary")
-
-        # Initialize an empty dictionary
-        length_dict = {}
-
-        # Convert the generator to a dictionary
-        length_generator = nx.all_pairs_shortest_path_length(nx_graph)
-        for source, distances in length_generator:
-            length_dict[source] = dict(distances)
-            pbar.update(len(distances))
-
-        pbar.close()
-
-        return length_dict               
-    
-    
-    def __getitem__(self, index):
-        user = self.trainUniqueUsers[index]
-        # return user_id and the positive items of the user
-        return user
-    
-    def switch2test(self):
-        """
-        change dataset mode to offer test data to dataloader
-        """
-        self.mode = self.mode_dict['test']
-    
-    def __len__(self):
-        return len(self.trainUniqueUsers)
-
-class Loader(BasicDataset):
-    """
-    Dataset type for pytorch \n
-    Incldue graph information
-    gowalla dataset
-    """
-
-    def __init__(self,config = world.config,path="../data/gowalla"):
-        # train or test
-        cprint(f'loading [{path}]')
-        self.split = config['A_split']
-        self.folds = config['A_n_fold']
-        self.mode_dict = {'train': 0, "test": 1}
-        self.mode = self.mode_dict['train']
-        self.n_user = 0
-        self.m_item = 0
-        train_file = path + '/train.txt'
-        test_file = path + '/test.txt'
-        self.path = path
-        trainUniqueUsers, trainItem, trainUser = [], [], []
-        testUniqueUsers, testItem, testUser = [], [], []
-        self.traindataSize = 0
-        self.testDataSize = 0
-
-        with open(train_file) as f:
-            for l in f.readlines():
-                if len(l) > 0:
-                    l = l.strip('\n').split(' ')
-                    items = [int(i) for i in l[1:]]
-                    uid = int(l[0])
-                    trainUniqueUsers.append(uid)
-                    trainUser.extend([uid] * len(items))
-                    trainItem.extend(items)
-                    self.m_item = max(self.m_item, max(items))
-                    self.n_user = max(self.n_user, uid)
-                    self.traindataSize += len(items)
-        self.trainUniqueUsers = np.array(trainUniqueUsers)
-        self.trainUser = np.array(trainUser)
-        self.trainItem = np.array(trainItem)
-
-        with open(test_file) as f:
-            for l in f.readlines():
-                if len(l) > 0:
-                    l = l.strip('\n').split(' ')
-                    items = [int(i) for i in l[1:]]
-                    uid = int(l[0])
-                    testUniqueUsers.append(uid)
-                    testUser.extend([uid] * len(items))
-                    testItem.extend(items)
-                    self.m_item = max(self.m_item, max(items))
-                    self.n_user = max(self.n_user, uid)
-                    self.testDataSize += len(items)
-        self.m_item += 1
-        self.n_user += 1
-        self.testUniqueUsers = np.array(testUniqueUsers)
-        self.testUser = np.array(testUser)
-        self.testItem = np.array(testItem)
-        
-        self.Graph = None
-        print(f"{self.trainDataSize} interactions for training")
-        print(f"{self.testDataSize} interactions for testing")
-        print(f"{world.dataset} Sparsity : {(self.trainDataSize + self.testDataSize) / self.n_users / self.m_items}")
-
-        # (users,items), bipartite graph
-        self.UserItemNet = csr_matrix((np.ones(len(self.trainUser)), (self.trainUser, self.trainItem)),
-                                      shape=(self.n_user, self.m_item))
-        self.users_D = np.array(self.UserItemNet.sum(axis=1)).squeeze()
-        self.users_D[self.users_D == 0.] = 1
-        self.items_D = np.array(self.UserItemNet.sum(axis=0)).squeeze()
-        self.items_D[self.items_D == 0.] = 1.
-        # pre-calculate
-        self._allPos = self.getUserPosItems(list(range(self.n_user)))
-        self.__testDict = self.__build_test()
         print(f"{world.dataset} is ready to go")
+
 
     @property
     def n_users(self):
@@ -706,6 +1203,7 @@ class Loader(BasicDataset):
                 pre_adj_mat = sp.load_npz(self.path + '/s_pre_adj_mat.npz')
                 print("successfully loaded...")
                 norm_adj = pre_adj_mat
+           
             except :
                 print("generating adjacency matrix")
                 s = time()
@@ -734,8 +1232,10 @@ class Loader(BasicDataset):
                 print("done split matrix")
             else:
                 self.Graph = self._convert_sp_mat_to_sp_tensor(norm_adj)
+                
                 self.Graph = self.Graph.coalesce().to(world.device)
                 print("don't split the matrix")
+
         return self.Graph
 
     def __build_test(self):
@@ -770,11 +1270,11 @@ class Loader(BasicDataset):
             posItems.append(self.UserItemNet[user].nonzero()[1])
         return posItems
 
-    # def getUserNegItems(self, users):
-    #     negItems = []
-    #     for user in users:
-    #         negItems.append(self.allNeg[user])
-    #     return negItems
+    def getUserNegItems(self, users):
+        negItems = []
+        for user in users:
+            negItems.append(self.allNeg[user])
+        return negItems
 
     def load_item_pop(self):
         csr_usr_item_graph = self.UserItemNet

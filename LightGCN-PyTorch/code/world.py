@@ -30,7 +30,7 @@ if not os.path.exists(FILE_PATH):
 
 
 config = {}
-all_dataset = ['lastfm', 'gowalla', 'yelp2018', 'amazon-book']
+all_dataset = ['lastfm', 'gowalla', 'yelp2018', 'amazon-book', 'amazon-toy', 'amazon-baby', 'amazon-beauty', 'amazon-home', 'movielens']
 all_models  = ['mf', 'lgn']
 config['batch_size'] = 4096
 config['bpr_batch_size'] = args.bpr_batch
@@ -53,8 +53,14 @@ config['warmup'] = args.warmup
 config['gamma'] = args.gamma
 config['pool'] = args.pool
 
+config['positem'] = args.positem
+config['negitem'] = args.negitem
+config['commute_matrix_path'] = args.commute_matrix_path
+config['neg_samp_strategy'] = args.neg_samp_strategy
+config['add_randomness'] = args.add_randomness
 
-GPU = torch.cuda.is_available()
+GPU = False
+#GPU = torch.cuda.is_available()
 device = torch.device('cuda' if GPU else "cpu")
 CORES = multiprocessing.cpu_count() // 2
 seed = args.seed

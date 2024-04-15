@@ -70,6 +70,12 @@ try:
             output_information = Procedure.NoSampling_train_original(dataset, Recmodel, bpr, epoch, neg_k=Neg_k,w=w)       
         elif world.config['neg_sample'] == 'naive_random_walk': 
             output_information = Procedure.Naive_random_walk_train_original(dataset, Recmodel, bpr, epoch, neg_k=Neg_k,w=w)
+        elif world.config['neg_sample'] == 'pure_commute_distance': 
+            output_information = Procedure.Pure_Commute_distance_train_original(dataset, Recmodel, bpr, epoch, neg_k=Neg_k,w=w)
+        elif world.config['neg_sample'] == 'commute_distance': 
+            output_information = Procedure.Commute_distance_train_original(dataset, Recmodel, bpr, epoch, neg_k=Neg_k,w=w)
+        elif world.config['neg_sample'] == 'all_simple_paths': 
+            output_information = Procedure.All_Simple_Paths_train_original(dataset, Recmodel, bpr, epoch, neg_k=Neg_k,w=w)
 
 
 

@@ -422,7 +422,105 @@ def Naive_random_walk_train_original(dataset, recommend_model, loss_class, epoch
     return f"loss{aver_loss:.3f}-{time_info}"
 
 
+def Commute_distance_train_original(dataset, recommend_model, loss_class, epoch, neg_k=1, w=None):
+    Recmodel = recommend_model
+    Recmodel.train()
+    bpr: utils.BPRLoss = loss_class
+    
+    with timer(name="Sample"):
+        S = utils.Commute_distance_original(dataset)
+    users = torch.Tensor(S[:, 0]).long()
+    posItems = torch.Tensor(S[:, 1]).long()
+    negItems = torch.Tensor(S[:, 2]).long()
 
+    users = users.to(world.device)
+    posItems = posItems.to(world.device)
+    negItems = negItems.to(world.device)
+    users, posItems, negItems = utils.shuffle(users, posItems, negItems)
+    total_batch = len(users) // world.config['bpr_batch_size'] + 1
+    aver_loss = 0.
+    for (batch_i,
+         (batch_users,
+          batch_pos,
+          batch_neg)) in enumerate(utils.minibatch(users,
+                                                   posItems,
+                                                   negItems,
+                                                   batch_size=world.config['bpr_batch_size'])):
+        cri = bpr.stageOne(batch_users, batch_pos, batch_neg)
+        aver_loss += cri
+        if world.tensorboard:
+            w.add_scalar(f'BPRLoss/BPR', cri, epoch * int(len(users) / world.config['bpr_batch_size']) + batch_i)
+    aver_loss = aver_loss / total_batch
+    time_info = timer.dict()
+    timer.zero()
+    return f"loss{aver_loss:.3f}-{time_info}"
+
+
+def Pure_Commute_distance_train_original(dataset, recommend_model, loss_class, epoch, neg_k=1, w=None):
+    Recmodel = recommend_model
+    Recmodel.train()
+    bpr: utils.BPRLoss = loss_class
+    
+    with timer(name="Sample"):
+        S = utils.Pure_Commute_distance_original(dataset)
+    users = torch.Tensor(S[:, 0]).long()
+    posItems = torch.Tensor(S[:, 1]).long()
+    negItems = torch.Tensor(S[:, 2]).long()
+
+    users = users.to(world.device)
+    posItems = posItems.to(world.device)
+    negItems = negItems.to(world.device)
+    users, posItems, negItems = utils.shuffle(users, posItems, negItems)
+    total_batch = len(users) // world.config['bpr_batch_size'] + 1
+    aver_loss = 0.
+    for (batch_i,
+         (batch_users,
+          batch_pos,
+          batch_neg)) in enumerate(utils.minibatch(users,
+                                                   posItems,
+                                                   negItems,
+                                                   batch_size=world.config['bpr_batch_size'])):
+        cri = bpr.stageOne(batch_users, batch_pos, batch_neg)
+        aver_loss += cri
+        if world.tensorboard:
+            w.add_scalar(f'BPRLoss/BPR', cri, epoch * int(len(users) / world.config['bpr_batch_size']) + batch_i)
+    aver_loss = aver_loss / total_batch
+    time_info = timer.dict()
+    timer.zero()
+    return f"loss{aver_loss:.3f}-{time_info}"
+
+def All_Simple_Paths_train_original(dataset, recommend_model, loss_class, epoch, neg_k=1, w=None):
+    Recmodel = recommend_model
+    Recmodel.train()
+    bpr: utils.BPRLoss = loss_class
+    
+    with timer(name="Sample"):
+        S = utils.All_simple_paths_original(dataset)
+    users = torch.Tensor(S[:, 0]).long()
+    posItems = torch.Tensor(S[:, 1]).long()
+    negItems = torch.Tensor(S[:, 2]).long()
+
+    users = users.to(world.device)
+    posItems = posItems.to(world.device)
+    negItems = negItems.to(world.device)
+    users, posItems, negItems = utils.shuffle(users, posItems, negItems)
+    total_batch = len(users) // world.config['bpr_batch_size'] + 1
+    aver_loss = 0.
+    for (batch_i,
+         (batch_users,
+          batch_pos,
+          batch_neg)) in enumerate(utils.minibatch(users,
+                                                   posItems,
+                                                   negItems,
+                                                   batch_size=world.config['bpr_batch_size'])):
+        cri = bpr.stageOne(batch_users, batch_pos, batch_neg)
+        aver_loss += cri
+        if world.tensorboard:
+            w.add_scalar(f'BPRLoss/BPR', cri, epoch * int(len(users) / world.config['bpr_batch_size']) + batch_i)
+    aver_loss = aver_loss / total_batch
+    time_info = timer.dict()
+    timer.zero()
+    return f"loss{aver_loss:.3f}-{time_info}"
 
 def test_one_batch(X):
     sorted_items = X[0].numpy()
@@ -497,9 +595,6 @@ def Test(dataset, Recmodel, epoch, w=None, multicore=0):
             rating_list.append(rating_K.cpu())
             groundTrue_list.append(groundTrue)
 
-        with open('/home/ece/Desktop/Negative_Sampling/LightGCN-PyTorch/prediction_results.pkl', 'wb') as f:
-            pickle.dump(all_results, f)
-            
         assert total_batch == len(users_list)
         X = zip(rating_list, groundTrue_list)
         if multicore == 1:

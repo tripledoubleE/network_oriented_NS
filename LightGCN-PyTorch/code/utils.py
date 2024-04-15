@@ -22,6 +22,7 @@ from tqdm import tqdm
 import math
 import itertools
 import pandas as pd
+import statistics
 
 from sources import mcns_sampling, item_projected_sampling
 
@@ -35,6 +36,34 @@ try:
 except:
     world.cprint("Cpp extension not loaded")
     sample_ext = False
+
+
+# Set seed for random choice in negative sampling
+rng = random.Random(20)
+
+def find_quantiles(data):
+    # Sort the data
+    sorted_data = sorted(data)
+
+    q1_indice = int(len(data)/4)
+    q1 = sorted_data[q1_indice]
+    
+    q2_indice = int(len(data)/2)
+    q2 = sorted_data[q2_indice]
+    
+    q3_indice = int(3*len(data)/4)
+    q3 = sorted_data[q3_indice]
+
+    return q1, q2, q3
+
+def scale_dict_values(d, min_scale=1, max_scale=5):
+    min_val = min(d.values())
+    max_val = max(d.values())
+    scaled_values = {}
+    for key, value in d.items():
+        scaled_value = min_scale + (value - min_val) * ((max_scale - min_scale) / (max_val - min_val))
+        scaled_values[key] = (value, round(scaled_value))
+    return scaled_values
 
 
 class BPRLoss:
@@ -62,9 +91,6 @@ def NoSampling_original(dataset, neg_ratio = 1):
     dataset : BasicDataset
 
     S = NoSampling_original_python(dataset)
-
-    with open('/home/ece/Desktop/Negative_Sampling/LightGCN-PyTorch/data/lastfm/train_with_negs_1_100.pkl', 'wb') as f:
-        pickle.dump(S, f)
     
     return S  
  
@@ -96,7 +122,7 @@ def NoSampling_original_python(dataset):
         posindex = np.random.randint(0, len(posForUser))
         positem = posForUser[posindex]
 
-        random_neg_items = random.sample(list(negForUser), 100)
+        random_neg_items = rng.sample(list(negForUser), 100)
         
         for negitem in random_neg_items:
             S.append([user, positem, negitem])
@@ -117,9 +143,6 @@ def UniformSample_original(dataset, neg_ratio = 1):
     
     print("UniformSample_original ")
     print(S.shape)
-
-    with open('/home/ece/Desktop/Negative_Sampling/LightGCN-PyTorch/data/lastfm/train_with_negs_1_1.pkl', 'wb') as f:
-        pickle.dump(S, f)
     
     return S  
  
@@ -750,9 +773,6 @@ def Naive_random_walk_original(dataset, neg_ratio = 1):
  
 def Naive_random_walk_original_python(dataset):
     """
-    the original impliment of BPR Sampling in LightGCN
-    :return:
-        np.array
     """
     print("NAIVE RANDOM WALK SAMPLING FUNCTION !!!!!")
 
@@ -761,59 +781,457 @@ def Naive_random_walk_original_python(dataset):
     user_num = dataset.trainDataSize
     users = np.random.randint(0, dataset.n_users, user_num)
     allPos = dataset.allPos
+    allNegs = dataset.allNeg
     path_length_dict = dataset.path_length_dict
     path_length_prob_dict = dataset.path_length_prob_dict
-    S = []
+    nbr_pos_item = dataset.nbr_pos_item
+    nbr_neg_item = dataset.nbr_neg_item
 
-    for i, user in enumerate(users):
+    # get uniform sampled data
+    S = []
+    
+    for i, user in enumerate(tqdm(users, desc='Naive RW Sampling')):
         posForUser = allPos[user]
+
+        posForUser_0 = posForUser
+        prefix = 'i_'
+        prefixed_all_pos = [prefix + str(x) for x in posForUser_0]
+
         if len(posForUser) == 0:
             continue
-        posindex = np.random.randint(0, len(posForUser))
-        positem = posForUser[posindex]
 
-        # uniform negative sampling
-        while True:
-            negitem_uniform = np.random.randint(0, dataset.m_items)
-            if negitem_uniform in posForUser:
-                continue
-            else:
-                break
-        S.append([user, positem, negitem_uniform])
-
-        # naive random walk sampling
-        while True:
-            user_id = 'u_' + str(user)
-            path_length_prob_list_for_user = path_length_prob_dict[user_id]
-            
-            # create candidate list that contains only items
-            filtered_list = [item for item in path_length_prob_list_for_user if item.startswith('i_')]
-
-            # remove randomly choosen negative item from candidate list (if exists)   
-            negitem_uniform_id = 'i_' + str(negitem_uniform)
-            if negitem_uniform_id in filtered_list:
-                filtered_list.remove(negitem_uniform_id)
-    
-            selected_elements = random.sample(filtered_list, k=4)
-            selected_elements_int = [int(item.split('_')[1]) for item in selected_elements]
-
-            if any(negitem in posForUser for negitem in selected_elements_int):
-                continue
-            else:
-                break
-           
-
-        for selected_negitem in selected_elements_int:
-            S.append([user, positem, selected_negitem])
-
-        print(np.array(S))
-        print(a)
+        if len(posForUser) > nbr_pos_item:
+            posForUser = rng.sample(list(posForUser), k=nbr_pos_item)
         
+        user_id = 'u_' + str(user)
+    
+        # normal
+        path_length_prob_list_for_user = path_length_prob_dict[user_id]
+        filtered_list = [item for item in path_length_prob_list_for_user if item.startswith('i_')]
+        filtered_list = [x for x in filtered_list if x not in prefixed_all_pos]
+
+        # q1 & q2
+        all_path_for_user = path_length_dict[user_id]
+        path_for_user = {key: value for key, value in all_path_for_user.items() if not key.startswith('u_')}
+        filtered_dict = {key: value for key, value in path_for_user.items() if key not in prefixed_all_pos}
+        
+        
+        if dataset.add_randomness == 1:
+            S = UniformSample_original_python(dataset).tolist()
+            
+            calculated_uni_pos = [element[1] for element in S if element[0] == user][0] #uniform neg samp'in o userin aldigi random pos item'ini bul
+
+            if calculated_uni_pos in posForUser:
+                posForUser = [x for x in posForUser if x != calculated_uni_pos]
+
+            calculated_uni_neg = [element[2] for element in S if element[0] == user][0]
+            calculated_uni_neg_id = 'i_' + str(calculated_uni_neg)
+
+            if calculated_uni_neg_id in filtered_list:
+                filtered_list.remove(calculated_uni_neg_id)
+            
+            if calculated_uni_neg_id in filtered_dict:
+                filtered_dict = {key: value for key, value in filtered_dict.items() if key != calculated_uni_neg_id}
+
+            # Calculate uniform neg sampling (uni neg + random negs for other pos items)
+
+            for positem in posForUser:  
+                while True:
+                    # uniform negative sampling
+                    negitem_uniform = rng.sample(list(allNegs[user]), k=1)
+                    negitem_uniform = negitem_uniform[0] 
+
+                    if negitem_uniform in posForUser:
+                        continue
+                    else:
+                        break
+
+                S.append([user, positem, negitem_uniform])
+                
+                # normal
+                # remove randomly selected neg items 
+                negitem_uniform_id = 'i_' + str(negitem_uniform)
+                if negitem_uniform_id in filtered_list:
+                    filtered_list.remove(negitem_uniform_id)
+
+                #q1 & q2
+                # remove randomly selected neg items 
+                filtered_dict = {key: value for key, value in filtered_dict.items() if key != negitem_uniform_id}
+
+
+        for positem in posForUser:
+            #while True:
+            if dataset.neg_samp_strategy == 'normal':
+
+                selected_elements = rng.sample(filtered_list, k=(nbr_neg_item-1))
+                selected_elements_int = [int(item.split('_')[1]) for item in selected_elements]
+
+                # delete selected negative elements from list
+                filtered_list.remove(selected_elements[0])
+        
+            elif dataset.neg_samp_strategy =='q1':
+                filtered_dict_values = list(filtered_dict.values())
+                # Calculate the first quartile (Q1)
+                q1,_,_ = find_quantiles(filtered_dict_values)
+
+                # Find the key corresponding to the value at the Q1th position
+                selected_elements = [key for key, value in filtered_dict.items() if value == int(q1)]
+                selected_random = rng.sample(selected_elements, k=1)
+                selected_elements_int = [int(item.split('_')[1]) for item in selected_random]
+                
+                filtered_dict = {key: value for key, value in filtered_dict.items() if key != selected_random[0]}
+
+            elif dataset.neg_samp_strategy =='q2':
+                filtered_dict_values = list(filtered_dict.values())
+                # Calculate the first quartile (Q2)
+                _,q2,_ = find_quantiles(filtered_dict_values)
+                # Find the key corresponding to the value at the Q1th position
+                selected_elements = [key for key, value in filtered_dict.items() if value == int(q2)]
+                selected_random = rng.sample(selected_elements, k=1)
+                selected_elements_int = [int(item.split('_')[1]) for item in selected_random]
+                
+                filtered_dict = {key: value for key, value in filtered_dict.items() if key != selected_random[0]}
+
+            for selected_negitem in selected_elements_int:
+                S.append([user, positem, selected_negitem])
 
     return np.array(S)
 
 
+def Pure_Commute_distance_original(dataset, neg_ratio = 1):
 
+    dataset : BasicDataset
+
+    S = Pure_Commute_distance_original_python(dataset)
+    
+    return S  
+ 
+def Pure_Commute_distance_original_python(dataset):
+    """
+    """
+    print("PURE COMMUTE DISTANCE SAMPLING FUNCTION !!!!!")
+
+    dataset : BasicDataset
+
+    user_num = dataset.trainDataSize
+    users = np.random.randint(0, dataset.n_users, user_num)
+    allPos = dataset.allPos
+    distance_dict = dataset.distance_dict
+    nbr_pos_item = dataset.nbr_pos_item
+    nbr_neg_item = dataset.nbr_neg_item
+
+    S = []
+
+    for i, user in enumerate(tqdm(users, desc='Pure Commute Distance Sampling')):
+        posForUser_0 = allPos[user]
+        prefix = 'i_'
+        prefixed_all_pos = [prefix + str(x) for x in posForUser_0]
+        
+        if len(posForUser_0) == 0:
+            continue
+
+        if len(posForUser_0) > nbr_pos_item:
+            posForUser = rng.sample(list(posForUser_0), k=nbr_pos_item)
+        else:
+            posForUser = allPos[user]
+
+        user_id = 'u_' + str(user)
+        distance_for_user = distance_dict[user_id]
+
+        filtered_dict = {key: value for key, value in distance_for_user.items() if key not in prefixed_all_pos}
+        
+        for positem in posForUser:
+
+            if dataset.neg_samp_strategy == 'furthest':
+                sorted_dict = dict(sorted(filtered_dict.items(), key=lambda x: x[1], reverse=True)) #biggest to smallest
+                sorted_items_list = list(sorted_dict.keys())
+                selected_elements = [sorted_items_list[0]]
+
+                #delete selected element from filtered dict (-uniform_neg -allpositems)
+                filtered_dict = {key: value for key, value in filtered_dict.items() if key != sorted_items_list[0]}
+
+            elif dataset.neg_samp_strategy == 'nearest':
+                sorted_dict = dict(sorted(filtered_dict.items(), key=lambda x: x[1], reverse=False)) #smallest to biggest
+                sorted_items_list = list(sorted_dict.keys())
+                selected_elements = [sorted_items_list[0]]
+
+                filtered_dict = {key: value for key, value in filtered_dict.items() if key != sorted_items_list[0]}
+
+            elif dataset.neg_samp_strategy == 'q1':
+                filtered_dict_values = list(filtered_dict.values())
+                # Calculate the first quartile (Q1)
+                q1,_,_ = find_quantiles(filtered_dict_values)
+                # Find the key corresponding to the value at the Q1th position
+                selected_elements = [key for key, value in filtered_dict.items() if value == q1]
+
+                filtered_dict = {key: value for key, value in filtered_dict.items() if key != selected_elements[0]}
+
+
+            elif dataset.neg_samp_strategy == 'q2':
+                filtered_dict_values = list(filtered_dict.values())
+                # Calculate the first quartile (Q2)
+                _,q2,_ = find_quantiles(filtered_dict_values)
+                # Find the key corresponding to the value at the Q1th position
+                selected_elements = [key for key, value in filtered_dict.items() if value == q2]
+
+                filtered_dict = {key: value for key, value in filtered_dict.items() if key != selected_elements[0]}
+
+            selected_elements_int = [int(item.split('_')[1]) for item in selected_elements]
+            
+            for selected_negitem in selected_elements_int:
+                S.append([user, positem, selected_negitem])
+
+    return np.array(S)
+
+
+def Commute_distance_original(dataset, neg_ratio = 1):
+
+    dataset : BasicDataset
+
+    S = Commute_distance_original_python(dataset)
+    
+    return S  
+ 
+def Commute_distance_original_python(dataset):
+    """
+    """
+    print("COMMUTE DISTANCE SAMPLING FUNCTION !!!!!")
+
+    dataset : BasicDataset
+
+    user_num = dataset.trainDataSize
+    users = np.random.randint(0, dataset.n_users, user_num)
+    allPos = dataset.allPos
+    allNegs = dataset.allNeg
+    distance_dict = dataset.distance_dict
+    nbr_pos_item = dataset.nbr_pos_item
+    nbr_neg_item = dataset.nbr_neg_item
+
+    S = []
+    #S = UniformSample_original_python(dataset).tolist()
+
+    for i, user in enumerate(tqdm(users, desc='Commute Distance Sampling')):
+        posForUser_0 = allPos[user]
+        prefix = 'i_'
+        prefixed_all_pos = [prefix + str(x) for x in posForUser_0]
+        
+        if len(posForUser_0) == 0:
+            continue
+
+        if len(posForUser_0) > nbr_pos_item:
+            posForUser = rng.sample(list(posForUser_0), k=nbr_pos_item)
+        else:
+            posForUser = allPos[user]
+
+        user_id = 'u_' + str(user)
+        distance_for_user = distance_dict[user_id]
+
+        filtered_dict = {key: value for key, value in distance_for_user.items() if key not in prefixed_all_pos}
+
+        if dataset.add_randomness == 1:
+            S = UniformSample_original_python(dataset).tolist()
+
+            calculated_uni_pos = [element[1] for element in S if element[0] == user][0] #uniform neg samp'in o userin aldigi random pos item'ini bul
+
+            if calculated_uni_pos in posForUser:
+                posForUser = [x for x in posForUser if x != calculated_uni_pos]
+
+            calculated_uni_neg = [element[2] for element in S if element[0] == user][0]
+            calculated_uni_neg_id = 'i_' + str(calculated_uni_neg)
+
+
+            if calculated_uni_neg_id in filtered_dict:
+                filtered_dict = {key: value for key, value in filtered_dict.items() if key != calculated_uni_neg_id}
+
+            # Calculate uniform neg sampling (uni neg + random negs for other pos items)
+
+
+            for positem in posForUser:  
+                while True:
+                    # uniform negative sampling
+                    negitem_uniform = rng.sample(list(allNegs[user]), k=1)
+                    negitem_uniform = negitem_uniform[0] 
+
+                    if negitem_uniform in posForUser:
+                        continue
+                    else:
+                        break
+
+                S.append([user, positem, negitem_uniform])
+                
+                # normal
+                # remove randomly selected neg items 
+                negitem_uniform_id = 'i_' + str(negitem_uniform)
+
+                #q1 & q2
+                # remove randomly selected neg items 
+                filtered_dict = {key: value for key, value in filtered_dict.items() if key != negitem_uniform_id}
+
+        for positem in posForUser:
+
+            if dataset.neg_samp_strategy == 'furthest':
+                sorted_dict = dict(sorted(filtered_dict.items(), key=lambda x: x[1], reverse=True)) #biggest to smallest
+                sorted_items_list = list(sorted_dict.keys())
+                selected_elements = [sorted_items_list[0]]
+
+                #delete selected element from filtered dict (-uniform_neg -allpositems)
+                filtered_dict = {key: value for key, value in filtered_dict.items() if key != sorted_items_list[0]}
+
+
+            elif dataset.neg_samp_strategy == 'nearest':
+                sorted_dict = dict(sorted(filtered_dict.items(), key=lambda x: x[1], reverse=False)) #smallest to biggest
+                sorted_items_list = list(sorted_dict.keys())
+                selected_elements = [sorted_items_list[0]]
+
+                filtered_dict = {key: value for key, value in filtered_dict.items() if key != sorted_items_list[0]}
+
+
+            elif dataset.neg_samp_strategy == 'q1':
+                filtered_dict_values = list(filtered_dict.values())
+                # Calculate the first quartile (Q1)
+                q1,_,_ = find_quantiles(filtered_dict_values)
+                # Find the key corresponding to the value at the Q1th position
+                selected_elements = [key for key, value in filtered_dict.items() if value == q1]
+
+                filtered_dict = {key: value for key, value in filtered_dict.items() if key != selected_elements[0]}
+
+
+            elif dataset.neg_samp_strategy == 'q2':
+                filtered_dict_values = list(filtered_dict.values())
+                # Calculate the first quartile (Q2)
+                _,q2,_ = find_quantiles(filtered_dict_values)
+                # Find the key corresponding to the value at the Q1th position
+                selected_elements = [key for key, value in filtered_dict.items() if value == q2]
+
+                filtered_dict = {key: value for key, value in filtered_dict.items() if key != selected_elements[0]}
+
+            elif dataset.neg_samp_strategy == 'scaled':
+                # Calculate the scaled dict 
+                scaled_dict = scale_dict_values(filtered_dict)
+
+                # Calculate the scaled list 
+                scaled_values_list = [value[1] for value in scaled_dict.values()]
+              
+                # Choose randomly
+                random_scaled_element = random.choice(scaled_values_list)
+
+                selected_elements_list = [key for key, value in scaled_dict.items() if value[1] == random_scaled_element]
+                selected_elements = [random.choice(selected_elements_list)]
+                
+                filtered_dict = {key: value for key, value in filtered_dict.items() if key != selected_elements[0]}
+
+            # selected_elements = random.choices(user_distance_dict_keys, weights = user_distance_dict_probs, k=(nbr_neg_item-1))
+            selected_elements_int = [int(item.split('_')[1]) for item in selected_elements]
+
+            for selected_negitem in selected_elements_int:
+                S.append([user, positem, selected_negitem])
+
+    return np.array(S)
+
+# All_simple_paths_original
+
+def All_simple_paths_original(dataset, neg_ratio = 1):
+
+    dataset : BasicDataset
+
+    S = All_simple_paths_original_python(dataset)
+    
+    return S  
+ 
+def All_simple_paths_original_python(dataset):
+    """
+    """
+    print("All_simple_paths_original FUNCTION !!!!!")
+
+    dataset : BasicDataset
+
+    user_num = dataset.trainDataSize
+    users = np.random.randint(0, dataset.n_users, user_num)
+    allPos = dataset.allPos
+    allNegs = dataset.allNeg
+    
+    nbr_pos_item = dataset.nbr_pos_item
+    nbr_neg_item = dataset.nbr_neg_item
+
+    if dataset.neg_samp_strategy == 'num_path':
+        estimated_num_paths_dict = dataset.estimated_num_paths_dict
+    elif dataset.neg_samp_strategy == 'max_path':
+        estimated_num_paths_dict = dataset.estimated_max_path_dict
+    #elif dataset.neg_samp_strategy == 'min_path':
+    #    estimated_num_paths_dict = dataset.estimated_max_path_dict
+
+    S = []
+    #S = UniformSample_original_python(dataset).tolist()
+
+    for i, user in enumerate(tqdm(users, desc='All Simple Path Sampling')):
+        posForUser = allPos[user]
+
+        posForUser_0 = posForUser
+        prefix = 'i_'
+        prefixed_all_pos = [prefix + str(x) for x in posForUser_0]
+
+        if len(posForUser) == 0:
+            continue
+
+        if len(posForUser) > nbr_pos_item:
+            posForUser = rng.sample(list(posForUser), k=nbr_pos_item)
+        
+        user_id = 'u_' + str(user)
+    
+        # normal
+        path_length_prob_list_for_user = estimated_num_paths_dict[user_id]
+        filtered_list = [item for item in path_length_prob_list_for_user if item.startswith('i_')]
+        filtered_list = [x for x in filtered_list if x not in prefixed_all_pos]
+        print("before for loop")
+        print(filtered_list)
+        
+        
+        if dataset.add_randomness == 1:
+            S = UniformSample_original_python(dataset).tolist()
+            
+            calculated_uni_pos = [element[1] for element in S if element[0] == user][0] #uniform neg samp'in o userin aldigi random pos item'ini bul
+
+            if calculated_uni_pos in posForUser:
+                posForUser = [x for x in posForUser if x != calculated_uni_pos]
+
+            calculated_uni_neg = [element[2] for element in S if element[0] == user][0]
+            calculated_uni_neg_id = 'i_' + str(calculated_uni_neg)
+
+            if calculated_uni_neg_id in filtered_list:
+                filtered_list.remove(calculated_uni_neg_id)
+
+            # Calculate uniform neg sampling (uni neg + random negs for other pos items)
+
+            for positem in posForUser:  
+                while True:
+                    # uniform negative sampling
+                    negitem_uniform = rng.sample(list(allNegs[user]), k=1)
+                    negitem_uniform = negitem_uniform[0] 
+
+                    if negitem_uniform in posForUser:
+                        continue
+                    else:
+                        break
+
+                S.append([user, positem, negitem_uniform])
+                
+                # normal
+                # remove randomly selected neg items 
+                negitem_uniform_id = 'i_' + str(negitem_uniform)
+                if negitem_uniform_id in filtered_list:
+                    filtered_list.remove(negitem_uniform_id)
+
+        for positem in posForUser:
+            selected_elements = rng.sample(filtered_list, k=(nbr_neg_item))
+            selected_elements_int = [int(item.split('_')[1]) for item in selected_elements]
+
+            # delete selected negative elements from list
+            filtered_list.remove(selected_elements[0])
+
+            for selected_negitem in selected_elements_int:
+                S.append([user, positem, selected_negitem])
+
+    return np.array(S)
 
 # ===================end samplers==========================
 # =====================utils====================================
