@@ -16,7 +16,7 @@ Recommendation systems struggle with data sparsity and class imbalance hindering
 | RNS+DD-NS-Long-Distance|           1            |  **0.0836**  | **0.1536**|**0.1386**|
 
 ### Performance Curves
-[Performance Curves](the_best_results_abs.pdf)
+![Performance Curves](best_results.png)
 *Figure: Precision, Recall, and NDCG Curves for Different Negative Sampling Methods*
 
 ## Repository Structure
@@ -49,4 +49,4 @@ Diffusion distance is calculated using the R script located in `LightGCN-PyTorch
 
 
 ## Acknowledgements
-This work is supported by the Galatasaray University Research Fund (BAP) within the scope of project number FBA-2024-1240, titled \textit{Bağlantı Tahmini Yöntemleri ve Sınıf Dengesizliği Sorununa Çözüm Yaklaşımları}, and the bilateral project of the Scientific and Technological Research Council of Türkiye (TÜBITAK), under grant number 122N701, with CampusFrance, within the scope of Hubert Curien Partnerships (PHC) project number 49032VB.
+This work is supported by the Galatasaray University Research Fund (BAP) within the scope of project number FBA-2024-1240, titled *Bağlantı Tahmini Yöntemleri ve Sınıf Dengesizliği Sorununa Çözüm Yaklaşımları*, and the bilateral project of the Scientific and Technological Research Council of Türkiye (TÜBITAK), under grant number 122N701, with CampusFrance, within the scope of Hubert Curien Partnerships (PHC) project number 49032VB.
