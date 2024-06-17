@@ -1,7 +1,3 @@
-Here's the updated README file including the sample running script and additional details about the diffusion distance negative sampling:
-
----
-
 # Enhancing Recommendation Systems with Novel Negative Sampling Techniques
 
 ## Abstract
@@ -9,37 +5,19 @@ Recommendation systems struggle with data sparsity and class imbalance hindering
 
 ## Results
 ### Key Performance Metrics
-| Method                 | Precision@10 | Recall@10 | NDCG@10 |
-|------------------------|--------------|-----------|---------|
-| Uniform Random Sampling| 0.115        | 0.190     | 0.130   |
-| Popularity-based NS    | 0.120        | 0.195     | 0.135   |
-| **PL-NS (Best)**       | **0.122**    | **0.198** | **0.138** |
-| PD-NS                  | 0.121        | 0.197     | 0.137   |
-| DD-NS                  | 0.120        | 0.196     | 0.136   |
+| Method                 | #Neg Item per Pos Item | Precision@10 | Recall@10 | NDCG@10 |
+|------------------------|------------------------|--------------|-----------|---------|
+| Uniform Random Sampling|           1            |    0.0811    |   0.1483  | 0.1347  |
+| Popularity-based NS    |           1            |    0.079     |   0.1435  | 0.1295  |
+| RNS+PL-Long-Distance   |           1            |    0.0827    |   0.1511  | 0.1361  |
+| PL-Long-Distance       |           2            |    0.0828    |   0.1498  | 0.1368  |
+| PD-Min                 |           1            |    0.0804    |   0.1437  | 0.1314  |
+| DD-NS-Long-Distane     |           1            |    0.083     |   0.1515  | 0.1382  |
+| RNS+DD-NS-Long-Distance|           1            |  **0.0836**  | **0.1536**|**0.1386**|
 
 ### Performance Curves
-![Performance Curves](the_best_results_abs.pdf)
+[Performance Curves](the_best_results_abs.pdf)
 *Figure: Precision, Recall, and NDCG Curves for Different Negative Sampling Methods*
-
-### Detailed Results
-\begin{table}
-\centering
-\caption{The best NS results in Last.fm dataset}
-\label{table:best_results}
-\begin{tabular}{|c|c|c|c|c|c|}
-\hline
-Sampling Approach & \multicolumn{1}{|p{3cm}|}{\centering \#Neg Item \\ per Pos Item} & tau & Precision@10 & Recall@10 & NDCG@10 \\
-\hline
-RNS & 1  & - & 0.0811 & 0.1483 & 0.1347 \\
-PNS & 1 & -  & 0.079 & 0.1435 & 0.1295 \\ 
-RNS+PL-Long-Distance & 1  & - &  0.0827 & 0.1511 & 0.1361 \\
-PL-Long-Distance & 2  & - & 0.0828 & 0.1498 & 0.1368 \\
-PD-Min & 1  & - & 0.0804 & 0.1437 & 0.1314 \\
-DD-NS-Long-Distance (scale: [1,5]) & 1 & 0.5 & 0.083 & 0.1515 & 0.1382 \\
-\textbf{RNS+DD-NS-Long-Distance (scaled: [1-5])} & \textbf{1} & 0.5 & \textbf{0.0836} & \textbf{0.1536} & \textbf{0.1386} \\
-\hline
-\end{tabular}
-\end{table}
 
 ## Repository Structure
 - `data/`: Contains the Last.fm dataset and any other necessary data files.
