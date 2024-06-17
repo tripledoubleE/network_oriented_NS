@@ -13,7 +13,7 @@ Recommendation systems struggle with data sparsity and class imbalance hindering
 | PL-Long-Distance       |           2            |    0.0828    |   0.1498  | 0.1368  |
 | PD-Min                 |           1            |    0.0804    |   0.1437  | 0.1314  |
 | DD-NS-Long-Distane     |           1            |    0.083     |   0.1515  | 0.1382  |
-| RNS+DD-NS-Long-Distance|           1            |  **0.0836**  | **0.1536**|**0.1386**|
+|**RNS+DD-NS-Long-Distance**|      **1**          |  **0.0836**  | **0.1536**|**0.1386**|
 
 ### Performance Curves
 ![Performance Curves](best_results.png)
