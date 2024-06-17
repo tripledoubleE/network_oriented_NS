@@ -25,6 +25,7 @@ Recommendation systems struggle with data sparsity and class imbalance hindering
 - `code/sources/`: Contains the R script for calculating diffusion distance.
 
 ## Usage
+We have integrated our proposed negative sampling methods into the official LightGCN code.
 
 ### Negative Sampling Strategies
 
