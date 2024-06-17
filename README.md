@@ -26,11 +26,11 @@ Recommendation systems struggle with data sparsity and class imbalance hindering
 
 ## Usage
 
-## Negative Sampling Strategies
+### Negative Sampling Strategies
 
 In our project, we provide several negative sampling strategies that can be specified using the `--neg_samp_strategy` flag. Each strategy is designed to address different aspects of data sparsity and class imbalance in recommender systems. Below are the available options and their corresponding methods:
 
-### Commute Distance
+#### Commute Distance
 
 This strategy uses the diffusion distance negative sampling approach. The available options within this strategy are:
 
@@ -40,7 +40,7 @@ This strategy uses the diffusion distance negative sampling approach. The availa
 - **q2**: Uses the second quartile (Q2) for selection, focusing on moderately distant items.
 - **scaled**: Refers to the long-distance strategy within the commute distance approach.
 
-### Naive Random Walk
+#### Naive Random Walk
 
 This strategy utilizes the path length negative sampling approach. The available options within this strategy are:
 
@@ -48,30 +48,30 @@ This strategy utilizes the path length negative sampling approach. The available
 - **q1**: Uses the first quartile (Q1) for selection, focusing on shorter paths.
 - **q2**: Uses the second quartile (Q2) for selection, focusing on moderately long paths.
 
-### All Simple Paths
+#### All Simple Paths
 
 This strategy is based on the path density negative sampling approach. It calculates the density of all simple paths between nodes to determine negative samples.
 - **num_path**: Refers to the minimum strategy, focusing on items with the least number of paths.
 - **max_path**: Refers to the maximum strategy, focusing on items with the highest number of paths.
 
 
-### Alpha75
+#### Alpha75
 
 This strategy uses the popularity-based negative sampling approach. The available options within this strategy are:
 
 
-### Combining with Random Negative Sampling (RNS)
+#### Combining with Random Negative Sampling (RNS)
 
 If the `add_randomness` flag is set to 1, the results from the above strategies will be combined with Random Negative Sampling (RNS) to introduce an element of randomness and further diversify the negative examples.
 
-### Sample Running Script for Diffusion Distance Negative Sampling
+#### Sample Running Script for Diffusion Distance Negative Sampling
 To specify a negative sampling strategy, use the `--neg_samp_strategy` flag followed by the desired option
 ```bash
 python main.py --decay=1e-4 --lr=0.001 --layer=3 --seed=2020 --dataset="lastfm" --topks="[10]" --recdim=64 --neg_sample="commute_distance" --multicore=1 --positem=10 --negitem=1 --add_randomness=0 --neg_samp_strategy='scaled' --commute_matrix_path='../data/lastfm/...'
 ```
 Diffusion distance is calculated using the R script located in `LightGCN-PyTorch/code/sources/hitting_time_calculate.R`, and the resulting distance is saved into the `commute_matrix_path`.
 
-### General Steps
+#### General Steps
 1. **Clone the repository:**
    ```bash
    git clone https://github.com/yourusername/your-repo-name.git
