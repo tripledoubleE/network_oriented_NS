@@ -66,7 +66,8 @@ This strategy uses the popularity-based negative sampling approach. The availabl
 If the `add_randomness` flag is set to 1, the results from the above strategies will be combined with Random Negative Sampling (RNS) to introduce an element of randomness and further diversify the negative examples.
 
 #### Sample Running Script for Diffusion Distance Negative Sampling
-To specify a negative sampling strategy, use the `--neg_samp_strategy` flag followed by the desired option
+To specify a negative sampling strategy, use the `--neg_samp_strategy` flag followed by the desired option.
+
 Using the following script, one can try path length ns (--neg_sample="naive_random_walk") using long distance weighted strategy (--neg_samp_strategy='scaled').
 ```bash
 python main.py --decay=1e-4 --lr=0.001 --layer=3 --seed=2020 --dataset="lastfm" --topks="[10]" --recdim=64 --neg_sample="naive_random_walk" --multicore=1 --positem=10 --negitem=1 --add_randomness=0 --neg_samp_strategy='scaled'
