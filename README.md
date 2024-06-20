@@ -67,15 +67,19 @@ If the `add_randomness` flag is set to 1, the results from the above strategies 
 
 #### Sample Running Script for Diffusion Distance Negative Sampling
 To specify a negative sampling strategy, use the `--neg_samp_strategy` flag followed by the desired option
+Using the following script, one can try path length ns (--neg_sample="naive_random_walk") using long distance weighted strategy (--neg_samp_strategy='scaled').
+```bash
+python main.py --decay=1e-4 --lr=0.001 --layer=3 --seed=2020 --dataset="lastfm" --topks="[10]" --recdim=64 --neg_sample="naive_random_walk" --multicore=1 --positem=10 --negitem=1 --add_randomness=0 --neg_samp_strategy='scaled'
+```
+
+Using the following script, one can try diffusion distance ns (--neg_sample="commute_distance") using long distance weighted strategy (--neg_samp_strategy='scaled').
 ```bash
 python main.py --decay=1e-4 --lr=0.001 --layer=3 --seed=2020 --dataset="lastfm" --topks="[10]" --recdim=64 --neg_sample="commute_distance" --multicore=1 --positem=10 --negitem=1 --add_randomness=0 --neg_samp_strategy='scaled' --commute_matrix_path='../data/lastfm/...'
 ```
 
 Diffusion distance is calculated using the R script located in `LightGCN-PyTorch/code/sources/hitting_time_calculate.R`, and the resulting distance is saved into the `commute_matrix_path`.
 
-```bash
-python main.py --decay=1e-4 --lr=0.001 --layer=3 --seed=2020 --dataset="lastfm" --topks="[10]" --recdim=64 --neg_sample="naive_random_walk" --multicore=1 --positem=10 --negitem=1 --add_randomness=0 --neg_samp_strategy='scaled'
-```
+
 #### General Steps
 1. **Clone the repository:**
    ```bash
