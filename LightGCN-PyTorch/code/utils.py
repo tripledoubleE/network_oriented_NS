@@ -56,7 +56,7 @@ def find_quantiles(data):
 
     return q1, q2, q3
 
-def scale_dict_values(d, min_scale=1, max_scale=5):
+def scale_dict_values(d, min_scale=1, max_scale=10):
     min_val = min(d.values())
     max_val = max(d.values())
     scaled_values = {}
@@ -159,6 +159,8 @@ def UniformSample_original_python(dataset):
     user_num = dataset.trainDataSize
     users = np.random.randint(0, dataset.n_users, user_num)
     allPos = dataset.allPos
+    allNegs = dataset.allNeg
+
     S = []
     sample_time1 = 0.
     sample_time2 = 0.
@@ -168,15 +170,26 @@ def UniformSample_original_python(dataset):
         if len(posForUser) == 0:
             continue
         sample_time2 += time() - start
-        posindex = np.random.randint(0, len(posForUser))
-        positem = posForUser[posindex]
-        while True:
-            negitem = np.random.randint(0, dataset.m_items)
-            if negitem in posForUser:
-                continue
-            else:
-                break
-        S.append([user, positem, negitem])
+        #posindex = np.random.randint(0, len(posForUser))
+        #positem = posForUser[posindex]
+
+        nbr_pos_item = 10
+        if len(posForUser) > nbr_pos_item:
+            posForUser = rng.sample(list(posForUser), k=nbr_pos_item)
+
+        for positem in posForUser:
+
+            while True:
+                #negitem = np.random.randint(0, dataset.m_items)
+                #negitem = rng.sample(list(allNegs[user]), k=1)
+                negitem = np.random.randint(0, dataset.m_items)
+                if negitem in posForUser:
+                    continue
+                else:
+                    break
+
+            S.append([user, positem, negitem])
+
         end = time()
         sample_time1 += end - start
     total = time() - total_start
@@ -788,9 +801,12 @@ def Naive_random_walk_original_python(dataset):
     nbr_neg_item = dataset.nbr_neg_item
 
     # get uniform sampled data
-    S = []
+    #
+    #S = []
+    S = UniformSample_original_python(dataset).tolist()
     
     for i, user in enumerate(tqdm(users, desc='Naive RW Sampling')):
+        exception_neg_list = []
         posForUser = allPos[user]
 
         posForUser_0 = posForUser
@@ -860,28 +876,59 @@ def Naive_random_walk_original_python(dataset):
 
 
         for positem in posForUser:
+            
             #while True:
             if dataset.neg_samp_strategy == 'normal':
+                try:
+                    selected_elements = rng.sample(filtered_list, k=(nbr_neg_item-1))
+                    selected_elements_int = [int(item.split('_')[1]) for item in selected_elements]
 
-                selected_elements = rng.sample(filtered_list, k=(nbr_neg_item-1))
-                selected_elements_int = [int(item.split('_')[1]) for item in selected_elements]
+                    # delete selected negative elements from list
+                    filtered_list.remove(selected_elements[0])
+                except:
+                    selected_random = rng.sample(list(allNegs[user]), k=1)[0]
+                    if selected_random not in exception_neg_list:
+                        selected_elements_int = [selected_random]
+                    else:
+                        selected_random = rng.sample(list(allNegs[user]), k=1)
+                        selected_elements_int = [selected_random]
+                    
+                    exception_neg_list.append(selected_random) 
 
-                # delete selected negative elements from list
-                filtered_list.remove(selected_elements[0])
+                for selected_negitem in selected_elements_int:
+                    S.append([user, positem, selected_negitem])                
         
             elif dataset.neg_samp_strategy =='q1':
+
                 filtered_dict_values = list(filtered_dict.values())
                 # Calculate the first quartile (Q1)
-                q1,_,_ = find_quantiles(filtered_dict_values)
+                try:
+                    q1,_,_ = find_quantiles(filtered_dict_values)
 
-                # Find the key corresponding to the value at the Q1th position
-                selected_elements = [key for key, value in filtered_dict.items() if value == int(q1)]
-                selected_random = rng.sample(selected_elements, k=1)
-                selected_elements_int = [int(item.split('_')[1]) for item in selected_random]
-                
-                filtered_dict = {key: value for key, value in filtered_dict.items() if key != selected_random[0]}
+                    # Find the key corresponding to the value at the Q1th position
+                    selected_elements = [key for key, value in filtered_dict.items() if value == int(q1)]
+                    selected_random = rng.sample(selected_elements, k=1)
+
+                    selected_elements_int = [int(item.split('_')[1]) for item in selected_random]
+                    filtered_dict = {key: value for key, value in filtered_dict.items() if key != selected_random[0]}
+                except:
+
+                    selected_random = rng.sample(list(allNegs[user]), k=1)[0]
+                    if selected_random not in exception_neg_list:
+                        selected_elements_int = [selected_random]
+                    else:
+                        selected_random = rng.sample(list(allNegs[user]), k=1)
+                        selected_elements_int = [selected_random]
+                    
+                    exception_neg_list.append(selected_random)
+
+                for selected_negitem in selected_elements_int:
+                    S.append([user, positem, selected_negitem])   
+                    
+
 
             elif dataset.neg_samp_strategy =='q2':
+
                 filtered_dict_values = list(filtered_dict.values())
                 # Calculate the first quartile (Q2)
                 _,q2,_ = find_quantiles(filtered_dict_values)
@@ -892,8 +939,8 @@ def Naive_random_walk_original_python(dataset):
                 
                 filtered_dict = {key: value for key, value in filtered_dict.items() if key != selected_random[0]}
 
-            for selected_negitem in selected_elements_int:
-                S.append([user, positem, selected_negitem])
+                for selected_negitem in selected_elements_int:
+                    S.append([user, positem, selected_negitem])
 
     return np.array(S)
 
@@ -1007,8 +1054,8 @@ def Commute_distance_original_python(dataset):
     nbr_pos_item = dataset.nbr_pos_item
     nbr_neg_item = dataset.nbr_neg_item
 
-    S = []
-    #S = UniformSample_original_python(dataset).tolist()
+    #S = []
+    S = UniformSample_original_python(dataset).tolist()
 
     for i, user in enumerate(tqdm(users, desc='Commute Distance Sampling')):
         posForUser_0 = allPos[user]
@@ -1153,12 +1200,20 @@ def All_simple_paths_original_python(dataset):
     nbr_pos_item = dataset.nbr_pos_item
     nbr_neg_item = dataset.nbr_neg_item
 
-    if dataset.neg_samp_strategy == 'num_path':
-        estimated_num_paths_dict = dataset.estimated_num_paths_dict
-    elif dataset.neg_samp_strategy == 'max_path':
-        estimated_num_paths_dict = dataset.estimated_max_path_dict
-    #elif dataset.neg_samp_strategy == 'min_path':
-    #    estimated_num_paths_dict = dataset.estimated_max_path_dict
+    with open('/home/sdiozer/Ece/LightGCN-PyTorch/data/lastfm/estimated_num_paths_dict_max.pkl', 'rb') as file:
+        estimated_num_paths_dict = pickle.load(file)
+
+    if dataset.neg_samp_strategy == 'min_path':
+         
+         estimated_num_paths_dict = dataset.estimated_num_paths_dict_min
+
+    #print(estimated_num_paths_dict)
+    # if dataset.neg_samp_strategy == 'num_path':
+    #     estimated_num_paths_dict = dataset.estimated_num_paths_dict
+    # elif dataset.neg_samp_strategy == 'max_path':
+    #     estimated_num_paths_dict = dataset.estimated_max_path_dict
+    # #elif dataset.neg_samp_strategy == 'min_path':
+    # #    estimated_num_paths_dict = dataset.estimated_max_path_dict
 
     S = []
     #S = UniformSample_original_python(dataset).tolist()
@@ -1182,8 +1237,6 @@ def All_simple_paths_original_python(dataset):
         path_length_prob_list_for_user = estimated_num_paths_dict[user_id]
         filtered_list = [item for item in path_length_prob_list_for_user if item.startswith('i_')]
         filtered_list = [x for x in filtered_list if x not in prefixed_all_pos]
-        print("before for loop")
-        print(filtered_list)
         
         
         if dataset.add_randomness == 1:
