@@ -80,12 +80,14 @@ Diffusion distance is calculated using the R script located in `LightGCN-PyTorch
    ```
 2. **Install dependencies:**
    ```bash
+   cd LightGCN-PyTorch/
    pip install -r requirements.txt
    ```
 3. **Calculate Diffusion Distance (if applicable):**
    Run the R script `hitting_time_calculate.R` to compute diffusion distances and save them into the specified path.
 4. **Run the model:**
    ```bash
+   cd LightGCN-PyTorch/code/
    python main.py 
 
 
